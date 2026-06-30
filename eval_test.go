@@ -66,6 +66,11 @@ func TestEval(t *testing.T) {
 		{"a = [1, 2, 3]; a[0] += 5; reverse { a[0] += 5 }; a[0]", "1"},
 		{"a = [[1, 2], [3, 4]]; a[1][0]", "3"},
 		{"a = [5, 6]; proc bump(arr) { arr[0] += 10 }; call bump(a); a[0]", "15"},
+		// local scope (Janus local / delocal)
+		{"x = 10; local t = 5; t += x; t", "15"},
+		{"x = 2; local t = 10; t -= x; t", "8"},
+		{"local t = 3; delocal t = 3; 7", "7"},
+		{"a = 7; reverse { local t = 0; t += a; delocal t = a }; a", "7"},
 	}
 	for _, tc := range tests {
 		got, err := evalSrc(t, tc.src)
@@ -95,6 +100,9 @@ func TestEvalErrors(t *testing.T) {
 		{"x = 1; y = 2; proc add(d, s) { d += s }; call add(x)", "takes 2 argument"},
 		{"a = [1, 2]; a[5]", "out of range"},
 		{"x = 5; x[0]", "cannot index number"},
+		{"y = 1; local y = 2", "already exists"},
+		{"local a = 5; delocal a = 6", "expected 6"},
+		{"delocal z = 0", "does not exist"},
 	}
 	for _, tc := range tests {
 		_, err := evalSrc(t, tc.src)

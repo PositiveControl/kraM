@@ -54,6 +54,11 @@ func invert(n Node) (Node, error) {
 	case Uncall:
 		return Call{Name: v.Name, Args: v.Args}, nil
 
+	case Local: // local x = e  <->  delocal x = e
+		return Delocal{Name: v.Name, Value: v.Value}, nil
+	case Delocal:
+		return Local{Name: v.Name, Value: v.Value}, nil
+
 	case If:
 		// Reversible iff it carries an exit assertion. Inverting swaps the
 		// entry condition and the exit assertion (so the exit now selects the

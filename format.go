@@ -48,6 +48,10 @@ func format(n Node) string {
 	case IdxUpdate:
 		op := map[TokKind]string{PLUSEQ: "+=", MINUSEQ: "-=", CARETEQ: "^="}[v.Op]
 		return v.Name + "[" + format(v.Idx) + "] " + op + " " + format(v.Value)
+	case Local:
+		return "local " + v.Name + " = " + format(v.Value)
+	case Delocal:
+		return "delocal " + v.Name + " = " + format(v.Value)
 	case Print:
 		return "print " + format(v.Value)
 	case Assert:

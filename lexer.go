@@ -50,6 +50,8 @@ const (
 	COMMA   // , (parameter/argument separator)
 	LBRACK  // [
 	RBRACK  // ]
+	LOCAL   // local (introduce a scoped variable)
+	DELOCAL // delocal (remove a scoped variable, asserting its value)
 )
 
 type Token struct {
@@ -146,6 +148,10 @@ func kindName(k TokKind) string {
 		return "LBRACK"
 	case RBRACK:
 		return "RBRACK"
+	case LOCAL:
+		return "LOCAL"
+	case DELOCAL:
+		return "DELOCAL"
 	default:
 		return "ILLEGAL"
 	}
@@ -324,6 +330,10 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{CALL, word, start})
 			case "uncall":
 				toks = append(toks, Token{UNCALL, word, start})
+			case "local":
+				toks = append(toks, Token{LOCAL, word, start})
+			case "delocal":
+				toks = append(toks, Token{DELOCAL, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

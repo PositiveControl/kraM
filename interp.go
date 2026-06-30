@@ -161,6 +161,12 @@ func (ip *Interp) set(name string, val Value) {
 	ip.do(varEdit{name: name, before: before, after: binding{val: val, exists: true}})
 }
 
+// unset removes a variable reversibly (the undo log stores its prior value, so
+// undo recreates it). Used by delocal.
+func (ip *Interp) unset(name string) {
+	ip.do(varEdit{name: name, before: ip.vars[name], after: binding{exists: false}})
+}
+
 func (ip *Interp) print(val Value) {
 	ip.do(printEdit{val: val})
 }

@@ -166,6 +166,8 @@ func (c *bitCircuit) emit(n Node) error {
 		}
 	case IdxAssign:
 		return fmt.Errorf("destructive element assignment is irreversible — use += / -= / ^= / <=>")
+	case Local, Delocal:
+		return fmt.Errorf("local/delocal are not lowered yet (they map to ancilla alloc/free)")
 	case ArrayLit, Index:
 		return fmt.Errorf("an array expression has no gates on its own")
 	case ProcDef:

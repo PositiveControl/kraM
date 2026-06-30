@@ -49,6 +49,10 @@ func substitute(n Node, m map[string]string) Node {
 		return IdxAssign{Name: r(v.Name), Idx: substitute(v.Idx, m), Value: substitute(v.Value, m)}
 	case IdxUpdate:
 		return IdxUpdate{Name: r(v.Name), Idx: substitute(v.Idx, m), Op: v.Op, Value: substitute(v.Value, m)}
+	case Local:
+		return Local{Name: r(v.Name), Value: substitute(v.Value, m)}
+	case Delocal:
+		return Delocal{Name: r(v.Name), Value: substitute(v.Value, m)}
 	case Print:
 		return Print{Value: substitute(v.Value, m)}
 	case Assert:

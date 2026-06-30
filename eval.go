@@ -108,6 +108,30 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		ip.xor(v.Name, mask)
 		return numVal(float64(lhs ^ mask)), nil
+	case Local:
+		if _, exists := ip.get(v.Name); exists {
+			return Value{}, fmt.Errorf("local %q already exists — local must introduce a fresh name", v.Name)
+		}
+		val, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		ip.set(v.Name, val)
+		return nilVal(), nil
+	case Delocal:
+		cur, exists := ip.get(v.Name)
+		if !exists {
+			return Value{}, fmt.Errorf("delocal %q: variable does not exist", v.Name)
+		}
+		want, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		if !valEqual(cur, want) {
+			return Value{}, fmt.Errorf("delocal %q: value is %s, expected %s", v.Name, cur, want)
+		}
+		ip.unset(v.Name)
+		return nilVal(), nil
 	case Swap:
 		return evalSwap(v, ip)
 	case ArrayLit:

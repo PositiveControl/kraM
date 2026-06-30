@@ -78,6 +78,17 @@ it either direction — `call` forward, `uncall` backward:
 > uncall add(x, y)   # x -= y  — the same procedure, reversed
 ```
 
+Scoped temporaries use `local` / `delocal` (the Janus discipline): `local`
+introduces a fresh variable, `delocal` removes it while asserting its value.
+They are exact inverses, so a temporary stays reversible — the asserted value is
+what lets it be removed without leaving garbage:
+
+```
+> local t = 0
+> t += x          # use t
+> delocal t = x   # remove t, asserting it now equals x
+```
+
 …and step through time:
 
 ```

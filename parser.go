@@ -35,6 +35,18 @@ type Swap struct {
 	AI, BI Node
 }
 
+// Local introduces a scoped variable: `local x = e` (x must be fresh).
+// Delocal removes it: `delocal x = e` (x must currently equal e). They are
+// exact inverses, so a scoped temporary is reversible.
+type Local struct {
+	Name  string
+	Value Node
+}
+type Delocal struct {
+	Name  string
+	Value Node
+}
+
 // ArrayLit builds an array value: [e0, e1, ...].
 type ArrayLit struct{ Elems []Node }
 
@@ -139,6 +151,8 @@ func (ArrayLit) node()       {}
 func (Index) node()          {}
 func (IdxAssign) node()      {}
 func (IdxUpdate) node()      {}
+func (Local) node()          {}
+func (Delocal) node()        {}
 
 // ---- Pratt parser ----
 
@@ -213,6 +227,16 @@ func (p *Parser) parseStmt() Node {
 	case REVERSE:
 		p.advance()
 		return Reverse{Body: p.parseBlock()}
+	case LOCAL:
+		p.advance()
+		name := p.declName()
+		p.expect(ASSIGN, "'='")
+		return Local{Name: name, Value: p.parseExpr(0)}
+	case DELOCAL:
+		p.advance()
+		name := p.declName()
+		p.expect(ASSIGN, "'='")
+		return Delocal{Name: name, Value: p.parseExpr(0)}
 	case PROC:
 		p.advance()
 		if p.cur().Kind != IDENT {
@@ -440,6 +464,15 @@ func (p *Parser) parsePrefix() Node {
 		p.fail("unexpected %s", t)
 		return nil
 	}
+}
+
+// declName reads a variable name in a declaration position.
+func (p *Parser) declName() string {
+	if p.cur().Kind != IDENT {
+		p.fail("expected a variable name, got %s", p.cur())
+		return ""
+	}
+	return p.advance().Lit
 }
 
 // parseNameList parses an optional `(a, b, c)` list of identifiers. Returns nil
