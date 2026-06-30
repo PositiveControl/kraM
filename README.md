@@ -51,13 +51,13 @@ So you can run a block backward:
 0
 ```
 
-Name a reversible block as a procedure, then run it either direction —
-`call` forward, `uncall` backward:
+Name a reversible block as a procedure (with by-reference parameters), then run
+it either direction — `call` forward, `uncall` backward:
 
 ```
-> proc cipher { msg ^= key }
-> call cipher     # encrypt
-> uncall cipher   # decrypt — the same procedure, reversed
+> proc add(dst, src) { dst += src }
+> call add(x, y)     # x += y
+> uncall add(x, y)   # x -= y  — the same procedure, reversed
 ```
 
 …and step through time:

@@ -1,6 +1,7 @@
 # kraMLang reversible Fibonacci.
-# The loop (a, b) -> (b, a+b) computes Fibonacci numbers with only reversible
-# updates. Run it backward (reverse / uncall) and the inputs come back exactly —
+# fibstep is a reusable, parameterized reversible operation: (x, y) -> (y, x+y).
+# The loop applies it n times to compute Fibonacci numbers with only reversible
+# updates. Run the loop backward (reverse) and the inputs come back exactly —
 # no information is lost.
 
 a = 0
@@ -8,10 +9,10 @@ b = 1
 i = 0
 n = 10
 
-proc step { a += b; a <=> b; i += 1 }
+proc fibstep(x, y) { x += y; x <=> y }
 
-from i == 0 { } loop { call step } until i == n
+from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
 print "fib(" + n + ") pair: " + a + ", " + b
 
-reverse { from i == 0 { } loop { call step } until i == n }
+reverse { from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n }
 print "reversed back to: a=" + a + ", b=" + b + ", i=" + i

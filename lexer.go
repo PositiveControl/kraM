@@ -47,6 +47,7 @@ const (
 	PROC    // proc (define a procedure)
 	CALL    // call (run a procedure forward)
 	UNCALL  // uncall (run a procedure backward)
+	COMMA   // , (parameter/argument separator)
 )
 
 type Token struct {
@@ -137,6 +138,8 @@ func kindName(k TokKind) string {
 		return "CALL"
 	case UNCALL:
 		return "UNCALL"
+	case COMMA:
+		return "COMMA"
 	default:
 		return "ILLEGAL"
 	}
@@ -191,6 +194,9 @@ func Lex(src string) []Token {
 			i++
 		case c == ';':
 			toks = append(toks, Token{SEMI, ";", i})
+			i++
+		case c == ',':
+			toks = append(toks, Token{COMMA, ",", i})
 			i++
 		case c == '=':
 			if peek(src, i+1) == '=' {

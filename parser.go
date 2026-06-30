@@ -62,15 +62,23 @@ type While struct {
 	Cond, Body Node
 }
 
-// ProcDef defines a procedure operating on shared variables (no parameters).
+// ProcDef defines a procedure. Params are by-reference variable names.
 type ProcDef struct {
-	Name string
-	Body Node
+	Name   string
+	Params []string
+	Body   Node
 }
 
-// Call runs a procedure forward; Uncall runs its structural inverse.
-type Call struct{ Name string }
-type Uncall struct{ Name string }
+// Call runs a procedure forward; Uncall runs its structural inverse. Args are
+// the caller's variable names bound by-reference to the parameters.
+type Call struct {
+	Name string
+	Args []string
+}
+type Uncall struct {
+	Name string
+	Args []string
+}
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -181,21 +189,24 @@ func (p *Parser) parseStmt() Node {
 			return nil
 		}
 		name := p.advance().Lit
-		return ProcDef{Name: name, Body: p.parseBlock()}
+		params := p.parseNameList()
+		return ProcDef{Name: name, Params: params, Body: p.parseBlock()}
 	case CALL:
 		p.advance()
 		if p.cur().Kind != IDENT {
 			p.fail("expected procedure name after 'call', got %s", p.cur())
 			return nil
 		}
-		return Call{Name: p.advance().Lit}
+		name := p.advance().Lit
+		return Call{Name: name, Args: p.parseNameList()}
 	case UNCALL:
 		p.advance()
 		if p.cur().Kind != IDENT {
 			p.fail("expected procedure name after 'uncall', got %s", p.cur())
 			return nil
 		}
-		return Uncall{Name: p.advance().Lit}
+		name := p.advance().Lit
+		return Uncall{Name: name, Args: p.parseNameList()}
 	case FROM:
 		p.advance()
 		entry := p.parseExpr(0)
@@ -339,6 +350,28 @@ func (p *Parser) parsePrefix() Node {
 		p.fail("unexpected %s", t)
 		return nil
 	}
+}
+
+// parseNameList parses an optional `(a, b, c)` list of identifiers. Returns nil
+// (not an empty slice) when there are no parentheses, so paramless procs work.
+func (p *Parser) parseNameList() []string {
+	if p.cur().Kind != LPAREN {
+		return nil
+	}
+	p.advance()
+	var names []string
+	for p.cur().Kind != RPAREN && p.cur().Kind != EOF {
+		if p.cur().Kind != IDENT {
+			p.fail("expected a variable name, got %s", p.cur())
+			return names
+		}
+		names = append(names, p.advance().Lit)
+		if p.cur().Kind == COMMA {
+			p.advance()
+		}
+	}
+	p.expect(RPAREN, "')'")
+	return names
 }
 
 // expect consumes a token of the given kind or records an error.

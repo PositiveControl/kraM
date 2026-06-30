@@ -233,6 +233,20 @@ func TestLoopCircuitMatchesInterpreter(t *testing.T) {
 	}
 }
 
+// TestProcCircuitMatchesInterpreter: parameterized procedures, inlined with
+// by-reference args, lower to gates matching the interpreter.
+func TestProcCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		{"a = 3; b = 8", "proc add(d, s) { d += s }; call add(a, b)"},
+		{"a = 3; b = 8", "proc add(d, s) { d += s }; call add(a, b); uncall add(a, b)"},
+		{"a = 1; b = 2; c = 4", "proc sw(x, y) { x <=> y }; call sw(a, b); call sw(b, c)"},
+		{"a = 12; b = 10", "proc x(d, s) { d ^= s }; call x(a, b)"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
+	}
+}
+
 // TestAncillaReuse: ancilla wires are recycled, so a straight-line program's
 // wire count is bounded by peak concurrent use, not total length.
 func TestAncillaReuse(t *testing.T) {

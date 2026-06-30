@@ -38,7 +38,7 @@ type bitCircuit struct {
 	gates  []BitGate
 	base   map[string]int  // var -> index of its bit 0
 	nwires int
-	procs  map[string]Node // procedure bodies, for inlining call/uncall
+	procs  map[string]ProcDef // procedure definitions, for inlining call/uncall
 	free_  []int           // clean (zeroed) ancilla wires available for reuse
 	noFree bool            // while true, freed wires are NOT pooled (see emitSub)
 	vals   *Interp         // compile-time state, for computing static loop bounds
@@ -50,7 +50,7 @@ type bitCircuit struct {
 // and always returned to zero, so they are reusable scratch. procs supplies
 // procedure definitions for inlining call/uncall (nil if none).
 func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
-	c := &bitCircuit{base: map[string]int{}, procs: map[string]Node{}, vals: ip}
+	c := &bitCircuit{base: map[string]int{}, procs: map[string]ProcDef{}, vals: ip}
 	if ip != nil {
 		for k, v := range ip.procs {
 			c.procs[k] = v
@@ -68,14 +68,14 @@ func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
 }
 
 // registerProcs records every ProcDef in the program into procs.
-func registerProcs(n Node, procs map[string]Node) {
+func registerProcs(n Node, procs map[string]ProcDef) {
 	switch v := n.(type) {
 	case Block:
 		for _, s := range v.Stmts {
 			registerProcs(s, procs)
 		}
 	case ProcDef:
-		procs[v.Name] = v.Body
+		procs[v.Name] = v
 	}
 }
 
@@ -147,15 +147,15 @@ func (c *bitCircuit) emit(n Node) error {
 	case ProcDef:
 		return nil // definition only — registered in compileBits, emits nothing
 	case Call:
-		body, ok := c.procs[v.Name]
-		if !ok {
-			return fmt.Errorf("undefined procedure %q", v.Name)
+		body, err := bindProcBody(c.procs, v.Name, v.Args)
+		if err != nil {
+			return err
 		}
 		return c.emit(body)
 	case Uncall:
-		body, ok := c.procs[v.Name]
-		if !ok {
-			return fmt.Errorf("undefined procedure %q", v.Name)
+		body, err := bindProcBody(c.procs, v.Name, v.Args)
+		if err != nil {
+			return err
 		}
 		inv, err := invert(body)
 		if err != nil {
@@ -730,7 +730,7 @@ func simulateBits(gates []BitGate, nwires int, init []bool) []bool {
 
 // collectVars returns, in first-appearance order, the variable names a program
 // reads or writes — descending into branches and inlined procedures.
-func collectVars(n Node, procs map[string]Node) []string {
+func collectVars(n Node, procs map[string]ProcDef) []string {
 	var order []string
 	seen := map[string]bool{}
 	add := func(name string) {
@@ -773,13 +773,13 @@ func collectVars(n Node, procs map[string]Node) []string {
 			walk(v.Do)
 			walk(v.Rest)
 		case Call:
-			if body, ok := procs[v.Name]; ok && !calling[v.Name] {
+			if body, err := bindProcBody(procs, v.Name, v.Args); err == nil && !calling[v.Name] {
 				calling[v.Name] = true
 				walk(body)
 				calling[v.Name] = false
 			}
 		case Uncall:
-			if body, ok := procs[v.Name]; ok && !calling[v.Name] {
+			if body, err := bindProcBody(procs, v.Name, v.Args); err == nil && !calling[v.Name] {
 				calling[v.Name] = true
 				walk(body)
 				calling[v.Name] = false

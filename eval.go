@@ -137,18 +137,18 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		return Eval(inv, ip)
 	case ProcDef:
-		ip.procs[v.Name] = v.Body // a definition, not state — not logged
+		ip.procs[v.Name] = v // a definition, not state — not logged
 		return nilVal(), nil
 	case Call:
-		body, ok := ip.procs[v.Name]
-		if !ok {
-			return Value{}, fmt.Errorf("undefined procedure %q", v.Name)
+		body, err := procBody(ip, v.Name, v.Args)
+		if err != nil {
+			return Value{}, err
 		}
 		return Eval(body, ip)
 	case Uncall:
-		body, ok := ip.procs[v.Name]
-		if !ok {
-			return Value{}, fmt.Errorf("undefined procedure %q", v.Name)
+		body, err := procBody(ip, v.Name, v.Args)
+		if err != nil {
+			return Value{}, err
 		}
 		inv, err := invert(body)
 		if err != nil {
@@ -311,6 +311,12 @@ func branchName(taken bool) string {
 		return "then"
 	}
 	return "else"
+}
+
+// procBody looks up a procedure and returns its body with parameters bound
+// by-reference to the call's argument variables.
+func procBody(ip *Interp, name string, args []string) (Node, error) {
+	return bindProcBody(ip.procs, name, args)
 }
 
 // evalBlock runs statements in order and yields the last value (nil if empty).

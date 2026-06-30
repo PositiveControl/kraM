@@ -64,11 +64,19 @@ func format(n Node) string {
 	case Reverse:
 		return "reverse " + format(v.Body)
 	case ProcDef:
-		return "proc " + v.Name + " " + format(v.Body)
+		return "proc " + v.Name + nameList(v.Params) + " " + format(v.Body)
 	case Call:
-		return "call " + v.Name
+		return "call " + v.Name + nameList(v.Args)
 	case Uncall:
-		return "uncall " + v.Name
+		return "uncall " + v.Name + nameList(v.Args)
 	}
 	return "<?>"
+}
+
+// nameList renders "(a, b, c)", or "" when empty.
+func nameList(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(names, ", ") + ")"
 }

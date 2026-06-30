@@ -53,6 +53,10 @@ func TestEval(t *testing.T) {
 		// procedures
 		{"x = 1; proc bump { x += 4 }; call bump; x", "5"},
 		{"x = 1; proc bump { x += 4 }; call bump; uncall bump; x", "1"},
+		// parameterized procedures (by-reference)
+		{"x = 3; y = 10; proc add(d, s) { d += s }; call add(x, y); x", "13"},
+		{"x = 3; y = 10; proc add(d, s) { d += s }; call add(x, y); uncall add(x, y); x", "3"},
+		{"x = 1; y = 2; proc sw(a, b) { a <=> b }; call sw(x, y); x", "2"},
 	}
 	for _, tc := range tests {
 		got, err := evalSrc(t, tc.src)
@@ -78,6 +82,8 @@ func TestEvalErrors(t *testing.T) {
 		{"if true { 1 } assert false", "exit assertion violated"},
 		{"from x == 0 { x += 1 } loop { x += 1 } until x == 1", "undefined variable"},
 		{"proc p { x = 1 }; uncall p", "cannot uncall"},
+		{"x = 1; proc add(d, s) { d += s }; call add(x, x)", "aliased argument"},
+		{"x = 1; y = 2; proc add(d, s) { d += s }; call add(x)", "takes 2 argument"},
 	}
 	for _, tc := range tests {
 		_, err := evalSrc(t, tc.src)
