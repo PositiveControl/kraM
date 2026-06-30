@@ -58,6 +58,17 @@ So you can run a block backward:
 0
 ```
 
+Arrays support the same reversible element operations (`reverse.kr` reverses an
+array in place, then undoes it):
+
+```
+> xs = [1, 2, 3]
+> xs[0] += 10      # element update
+> xs[0] <=> xs[2]  # element swap
+> xs
+[3, 2, 11]
+```
+
 Name a reversible block as a procedure (with by-reference parameters), then run
 it either direction — `call` forward, `uncall` backward:
 
@@ -136,4 +147,6 @@ via an equality check or a subtract-based comparator, to controlled gates.
 Reversible loops are unrolled using the iteration count from the current state
 (the circuit is specialised to that count); nested loops can't be unrolled. Ancilla wires are recycled, so a circuit's width is bounded by
 peak concurrent scratch, not program length. `+=`/`-=` aren't bit-exact in the
-*interpreter* (`^=` is); the *gate* circuit is exact mod 2^16.
+*interpreter* (`^=` is); the *gate* circuit is exact mod 2^16. Arrays work in the
+interpreter (reversible element ops) but are not lowered to circuits — dynamic
+indexing has no fixed wiring.

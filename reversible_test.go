@@ -247,6 +247,49 @@ func TestProcCircuitMatchesInterpreter(t *testing.T) {
 	}
 }
 
+// TestArrayRoundTrip: a sequence of reversible array operations, then its
+// inverse, restores the array exactly.
+func TestArrayRoundTrip(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	const size = 6
+	for iter := 0; iter < 300; iter++ {
+		ip := NewInterp()
+		// random initial array
+		elems := make([]string, size)
+		for i := range elems {
+			elems[i] = fmt.Sprintf("%d", rng.Intn(100))
+		}
+		mustRun(t, ip, "a = ["+strings.Join(elems, ", ")+"]")
+		before, _ := ip.get("a")
+
+		// random reversible ops
+		ops := make([]string, 0, 8)
+		for k := 0; k < 3+rng.Intn(6); k++ {
+			switch rng.Intn(4) {
+			case 0:
+				ops = append(ops, fmt.Sprintf("a[%d] += %d", rng.Intn(size), rng.Intn(50)))
+			case 1:
+				ops = append(ops, fmt.Sprintf("a[%d] -= %d", rng.Intn(size), rng.Intn(50)))
+			case 2:
+				ops = append(ops, fmt.Sprintf("a[%d] ^= %d", rng.Intn(size), rng.Intn(64)))
+			case 3:
+				i := rng.Intn(size)
+				j := (i + 1 + rng.Intn(size-1)) % size
+				ops = append(ops, fmt.Sprintf("a[%d] <=> a[%d]", i, j))
+			}
+		}
+		prog := strings.Join(ops, "; ")
+		mustRun(t, ip, prog)
+		mustRun(t, ip, "reverse { "+prog+" }")
+
+		after, _ := ip.get("a")
+		if before.String() != after.String() {
+			t.Fatalf("array round-trip changed:\nbefore: %s\nafter:  %s\nprog: %s",
+				before, after, prog)
+		}
+	}
+}
+
 // TestAncillaReuse: ancilla wires are recycled, so a straight-line program's
 // wire count is bounded by peak concurrent use, not total length.
 func TestAncillaReuse(t *testing.T) {

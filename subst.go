@@ -36,7 +36,19 @@ func substitute(n Node, m map[string]string) Node {
 	case XorAssign:
 		return XorAssign{Name: r(v.Name), Value: substitute(v.Value, m)}
 	case Swap:
-		return Swap{A: r(v.A), B: r(v.B)}
+		return Swap{A: r(v.A), AI: substNil(v.AI, m), B: r(v.B), BI: substNil(v.BI, m)}
+	case ArrayLit:
+		elems := make([]Node, len(v.Elems))
+		for i, e := range v.Elems {
+			elems[i] = substitute(e, m)
+		}
+		return ArrayLit{Elems: elems}
+	case Index:
+		return Index{Arr: substitute(v.Arr, m), Idx: substitute(v.Idx, m)}
+	case IdxAssign:
+		return IdxAssign{Name: r(v.Name), Idx: substitute(v.Idx, m), Value: substitute(v.Value, m)}
+	case IdxUpdate:
+		return IdxUpdate{Name: r(v.Name), Idx: substitute(v.Idx, m), Op: v.Op, Value: substitute(v.Value, m)}
 	case Print:
 		return Print{Value: substitute(v.Value, m)}
 	case Assert:
@@ -71,6 +83,14 @@ func substitute(n Node, m map[string]string) Node {
 		return Uncall{Name: v.Name, Args: rename(v.Args, r)}
 	}
 	return n
+}
+
+// substNil substitutes an optional node (used for swap index operands).
+func substNil(n Node, m map[string]string) Node {
+	if n == nil {
+		return nil
+	}
+	return substitute(n, m)
 }
 
 func rename(names []string, r func(string) string) []string {

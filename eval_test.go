@@ -57,6 +57,15 @@ func TestEval(t *testing.T) {
 		{"x = 3; y = 10; proc add(d, s) { d += s }; call add(x, y); x", "13"},
 		{"x = 3; y = 10; proc add(d, s) { d += s }; call add(x, y); uncall add(x, y); x", "3"},
 		{"x = 1; y = 2; proc sw(a, b) { a <=> b }; call sw(x, y); x", "2"},
+		// arrays
+		{"a = [10, 20, 30]; a", "[10, 20, 30]"},
+		{"a = [10, 20, 30]; a[1]", "20"},
+		{"a = [1, 2, 3]; a[0] += 5; a[0]", "6"},
+		{"a = [1, 2, 3]; a[2] ^= 1; a[2]", "2"},
+		{"a = [1, 2, 3]; a[0] <=> a[2]; a", "[3, 2, 1]"},
+		{"a = [1, 2, 3]; a[0] += 5; reverse { a[0] += 5 }; a[0]", "1"},
+		{"a = [[1, 2], [3, 4]]; a[1][0]", "3"},
+		{"a = [5, 6]; proc bump(arr) { arr[0] += 10 }; call bump(a); a[0]", "15"},
 	}
 	for _, tc := range tests {
 		got, err := evalSrc(t, tc.src)
@@ -84,6 +93,8 @@ func TestEvalErrors(t *testing.T) {
 		{"proc p { x = 1 }; uncall p", "cannot uncall"},
 		{"x = 1; proc add(d, s) { d += s }; call add(x, x)", "aliased argument"},
 		{"x = 1; y = 2; proc add(d, s) { d += s }; call add(x)", "takes 2 argument"},
+		{"a = [1, 2]; a[5]", "out of range"},
+		{"x = 5; x[0]", "cannot index number"},
 	}
 	for _, tc := range tests {
 		_, err := evalSrc(t, tc.src)

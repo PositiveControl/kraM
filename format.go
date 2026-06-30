@@ -34,7 +34,20 @@ func format(n Node) string {
 	case XorAssign:
 		return v.Name + " ^= " + format(v.Value)
 	case Swap:
-		return v.A + " <=> " + v.B
+		return loc(v.A, v.AI) + " <=> " + loc(v.B, v.BI)
+	case ArrayLit:
+		parts := make([]string, len(v.Elems))
+		for i, e := range v.Elems {
+			parts[i] = format(e)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case Index:
+		return format(v.Arr) + "[" + format(v.Idx) + "]"
+	case IdxAssign:
+		return v.Name + "[" + format(v.Idx) + "] = " + format(v.Value)
+	case IdxUpdate:
+		op := map[TokKind]string{PLUSEQ: "+=", MINUSEQ: "-=", CARETEQ: "^="}[v.Op]
+		return v.Name + "[" + format(v.Idx) + "] " + op + " " + format(v.Value)
 	case Print:
 		return "print " + format(v.Value)
 	case Assert:
@@ -71,6 +84,14 @@ func format(n Node) string {
 		return "uncall " + v.Name + nameList(v.Args)
 	}
 	return "<?>"
+}
+
+// loc renders an lvalue: "a" or "a[i]".
+func loc(name string, idx Node) string {
+	if idx == nil {
+		return name
+	}
+	return name + "[" + format(idx) + "]"
 }
 
 // nameList renders "(a, b, c)", or "" when empty.

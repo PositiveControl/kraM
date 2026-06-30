@@ -27,8 +27,35 @@ type CompoundAssign struct {
 	Value Node
 }
 
-// Swap exchanges two variables: `a <=> b`. Self-inverse, no information lost.
-type Swap struct{ A, B string }
+// Swap exchanges two lvalues: `a <=> b` or `a[i] <=> a[j]`. AI/BI are the index
+// expressions when an operand is an array element (nil for a plain variable).
+// Self-inverse, no information lost.
+type Swap struct {
+	A, B   string
+	AI, BI Node
+}
+
+// ArrayLit builds an array value: [e0, e1, ...].
+type ArrayLit struct{ Elems []Node }
+
+// Index reads an array element: Arr[Idx].
+type Index struct{ Arr, Idx Node }
+
+// IdxAssign is destructive element assignment: a[i] = value.
+type IdxAssign struct {
+	Name  string
+	Idx   Node
+	Value Node
+}
+
+// IdxUpdate is a reversible element update: a[i] += / -= / ^= value. Op is the
+// operator token (PLUSEQ, MINUSEQ, or CARETEQ).
+type IdxUpdate struct {
+	Name  string
+	Idx   Node
+	Op    TokKind
+	Value Node
+}
 
 // XorAssign is `name ^= value` — a self-inverse, exact reversible update on
 // integers. Maps to a CNOT-style gate.
@@ -108,6 +135,10 @@ func (Reverse) node()        {}
 func (ReversibleLoop) node() {}
 func (Unary) node()          {}
 func (Binary) node()         {}
+func (ArrayLit) node()       {}
+func (Index) node()          {}
+func (IdxAssign) node()      {}
+func (IdxUpdate) node()      {}
 
 // ---- Pratt parser ----
 
@@ -224,34 +255,77 @@ func (p *Parser) parseStmt() Node {
 	case LBRACE:
 		return p.parseBlock()
 	}
-	if p.cur().Kind == IDENT {
-		switch p.toks[p.pos+1].Kind {
-		case ASSIGN:
-			name := p.advance().Lit
-			p.advance() // '='
-			return Assign{Name: name, Value: p.parseExpr(0)}
-		case PLUSEQ, MINUSEQ:
-			name := p.advance().Lit
-			op := PLUS
-			if p.advance().Kind == MINUSEQ {
-				op = MINUS
-			}
-			return CompoundAssign{Name: name, Op: op, Value: p.parseExpr(0)}
-		case CARETEQ:
-			name := p.advance().Lit
-			p.advance() // '^='
-			return XorAssign{Name: name, Value: p.parseExpr(0)}
-		case SWAP:
-			a := p.advance().Lit
-			p.advance() // '<=>'
-			if p.cur().Kind != IDENT {
-				p.fail("expected variable after '<=>', got %s", p.cur())
-				return nil
-			}
-			return Swap{A: a, B: p.advance().Lit}
+	// Parse an expression; if an assignment operator follows, the expression was
+	// a target (a variable or an indexed element). Otherwise it is a bare
+	// expression statement.
+	left := p.parseExpr(0)
+	switch p.cur().Kind {
+	case ASSIGN:
+		p.advance()
+		return p.makeAssign(left, p.parseExpr(0))
+	case PLUSEQ, MINUSEQ, CARETEQ:
+		op := p.advance().Kind
+		return p.makeUpdate(left, op, p.parseExpr(0))
+	case SWAP:
+		p.advance()
+		return p.makeSwap(left, p.parseExpr(0))
+	}
+	return left
+}
+
+// lvalue extracts (name, index) from an assignable expression. index is nil for
+// a plain variable. Only single-level indexing (a[i]) is assignable.
+func (p *Parser) lvalue(n Node) (string, Node, bool) {
+	switch v := n.(type) {
+	case Var:
+		return v.Name, nil, true
+	case Index:
+		if base, ok := v.Arr.(Var); ok {
+			return base.Name, v.Idx, true
 		}
 	}
-	return p.parseExpr(0)
+	return "", nil, false
+}
+
+func (p *Parser) makeAssign(target, val Node) Node {
+	name, idx, ok := p.lvalue(target)
+	if !ok {
+		p.fail("cannot assign to this expression")
+		return nil
+	}
+	if idx == nil {
+		return Assign{Name: name, Value: val}
+	}
+	return IdxAssign{Name: name, Idx: idx, Value: val}
+}
+
+func (p *Parser) makeUpdate(target Node, op TokKind, val Node) Node {
+	name, idx, ok := p.lvalue(target)
+	if !ok {
+		p.fail("cannot update this expression")
+		return nil
+	}
+	if idx != nil {
+		return IdxUpdate{Name: name, Idx: idx, Op: op, Value: val}
+	}
+	if op == CARETEQ {
+		return XorAssign{Name: name, Value: val}
+	}
+	arith := PLUS
+	if op == MINUSEQ {
+		arith = MINUS
+	}
+	return CompoundAssign{Name: name, Op: arith, Value: val}
+}
+
+func (p *Parser) makeSwap(a, b Node) Node {
+	an, ai, aok := p.lvalue(a)
+	bn, bi, bok := p.lvalue(b)
+	if !aok || !bok {
+		p.fail("'<=>' operands must be variables or array elements")
+		return nil
+	}
+	return Swap{A: an, AI: ai, B: bn, BI: bi}
 }
 
 func (p *Parser) parseBlock() Node {
@@ -305,6 +379,12 @@ func (p *Parser) advance() Token {
 // whose binding power exceeds minBP.
 func (p *Parser) parseExpr(minBP int) Node {
 	left := p.parsePrefix()
+	for p.cur().Kind == LBRACK { // postfix indexing: a[i], a[i][j]
+		p.advance()
+		idx := p.parseExpr(0)
+		p.expect(RBRACK, "']'")
+		left = Index{Arr: left, Idx: idx}
+	}
 	for p.err == nil {
 		bp, ok := infixBP[p.cur().Kind]
 		if !ok || bp < minBP {
@@ -346,6 +426,16 @@ func (p *Parser) parsePrefix() Node {
 		}
 		p.advance()
 		return inner
+	case LBRACK: // array literal [e, e, ...]
+		var elems []Node
+		for p.cur().Kind != RBRACK && p.cur().Kind != EOF && p.err == nil {
+			elems = append(elems, p.parseExpr(0))
+			if p.cur().Kind == COMMA {
+				p.advance()
+			}
+		}
+		p.expect(RBRACK, "']'")
+		return ArrayLit{Elems: elems}
 	default:
 		p.fail("unexpected %s", t)
 		return nil

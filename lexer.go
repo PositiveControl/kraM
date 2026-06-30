@@ -48,6 +48,8 @@ const (
 	CALL    // call (run a procedure forward)
 	UNCALL  // uncall (run a procedure backward)
 	COMMA   // , (parameter/argument separator)
+	LBRACK  // [
+	RBRACK  // ]
 )
 
 type Token struct {
@@ -140,6 +142,10 @@ func kindName(k TokKind) string {
 		return "UNCALL"
 	case COMMA:
 		return "COMMA"
+	case LBRACK:
+		return "LBRACK"
+	case RBRACK:
+		return "RBRACK"
 	default:
 		return "ILLEGAL"
 	}
@@ -197,6 +203,12 @@ func Lex(src string) []Token {
 			i++
 		case c == ',':
 			toks = append(toks, Token{COMMA, ",", i})
+			i++
+		case c == '[':
+			toks = append(toks, Token{LBRACK, "[", i})
+			i++
+		case c == ']':
+			toks = append(toks, Token{RBRACK, "]", i})
 			i++
 		case c == '=':
 			if peek(src, i+1) == '=' {

@@ -32,10 +32,19 @@ func invert(n Node) (Node, error) {
 		return CompoundAssign{Name: v.Name, Op: op, Value: v.Value}, nil
 
 	case Swap:
-		return v, nil // self-inverse
+		return v, nil // self-inverse (variable or array element)
 
 	case XorAssign:
 		return v, nil // self-inverse: x ^= e twice restores x
+
+	case IdxUpdate:
+		switch v.Op {
+		case PLUSEQ:
+			return IdxUpdate{Name: v.Name, Idx: v.Idx, Op: MINUSEQ, Value: v.Value}, nil
+		case MINUSEQ:
+			return IdxUpdate{Name: v.Name, Idx: v.Idx, Op: PLUSEQ, Value: v.Value}, nil
+		}
+		return v, nil // CARETEQ is self-inverse
 
 	case Assert:
 		return v, nil // self-inverse: the check is the same backward
@@ -78,11 +87,13 @@ func invert(n Node) (Node, error) {
 
 	case Assign:
 		return nil, fmt.Errorf("cannot reverse destructive assignment of %q; use += / -= / <=>", v.Name)
+	case IdxAssign:
+		return nil, fmt.Errorf("cannot reverse destructive assignment of %s[..]; use += / -= / ^= / <=>", v.Name)
 	case Print:
 		return nil, fmt.Errorf("cannot reverse print (irreversible output)")
 	case While:
 		return nil, fmt.Errorf("classic while is not reversible; use from/loop/until")
-	case NumberLit, StrLit, BoolLit, Var, Binary, Unary:
+	case NumberLit, StrLit, BoolLit, Var, Binary, Unary, ArrayLit, Index:
 		return nil, fmt.Errorf("cannot reverse an expression — it computes a value but changes no state; reverse needs reversible updates (+= -= ^= <=>)")
 	}
 	return nil, fmt.Errorf("cannot reverse %T", n)

@@ -137,6 +137,9 @@ func (c *bitCircuit) emit(n Node) error {
 	case CompoundAssign:
 		return c.emitAdd(v)
 	case Swap:
+		if v.AI != nil || v.BI != nil {
+			return fmt.Errorf("arrays are not supported in circuits (dynamic indexing has no fixed wiring)")
+		}
 		x, y := c.reg(v.A), c.reg(v.B)
 		for i := 0; i < bitWidth; i++ { // swap = 3 CNOTs per bit
 			c.cnot(x[i], y[i])
@@ -144,6 +147,8 @@ func (c *bitCircuit) emit(n Node) error {
 			c.cnot(x[i], y[i])
 		}
 		return nil
+	case ArrayLit, Index, IdxAssign, IdxUpdate:
+		return fmt.Errorf("arrays are not supported in circuits (dynamic indexing has no fixed wiring)")
 	case ProcDef:
 		return nil // definition only — registered in compileBits, emits nothing
 	case Call:

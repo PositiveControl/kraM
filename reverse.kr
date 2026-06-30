@@ -1,0 +1,17 @@
+# kraMLang reversible in-place array reversal.   Run:  ./kram reverse.kr
+#
+# Swapping xs[i] with xs[n-1-i] for the first half reverses the array using only
+# reversible swaps. Running the loop backward (reverse) restores the original —
+# no information is lost.
+
+xs = [1, 2, 3, 4, 5, 6]
+i = 0
+n = 6
+
+print "before: " + xs
+
+from i == 0 { } loop { xs[i] <=> xs[n - 1 - i]; i += 1 } until i == 3
+print "after:  " + xs
+
+reverse { from i == 0 { } loop { xs[i] <=> xs[n - 1 - i]; i += 1 } until i == 3 }
+print "undone: " + xs

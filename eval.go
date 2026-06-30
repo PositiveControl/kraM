@@ -109,14 +109,51 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		ip.xor(v.Name, mask)
 		return numVal(float64(lhs ^ mask)), nil
 	case Swap:
-		if _, ok := ip.get(v.A); !ok {
-			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.A)
+		return evalSwap(v, ip)
+	case ArrayLit:
+		elems := make([]Value, len(v.Elems))
+		for i, e := range v.Elems {
+			val, err := Eval(e, ip)
+			if err != nil {
+				return Value{}, err
+			}
+			elems[i] = val
 		}
-		if _, ok := ip.get(v.B); !ok {
-			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.B)
+		return arrVal(elems), nil
+	case Index:
+		arr, idx, err := evalIndex(v.Arr, v.Idx, ip)
+		if err != nil {
+			return Value{}, err
 		}
-		ip.swap(v.A, v.B)
-		return nilVal(), nil
+		return arr.Arr[idx], nil
+	case IdxAssign:
+		arr, idx, err := evalIndexVar(ip, v.Name, v.Idx)
+		if err != nil {
+			return Value{}, err
+		}
+		val, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		msg := fmt.Sprintf("destructive overwrite of %s[%d] (was %s) — use += / -= / ^= / <=> to stay reversible", v.Name, idx, arr.Arr[idx])
+		if ip.strict {
+			return Value{}, fmt.Errorf("strict mode: %s", msg)
+		}
+		ip.warn(msg)
+		ip.set(v.Name, withElem(arr, idx, val))
+		return val, nil
+	case IdxUpdate:
+		arr, idx, err := evalIndexVar(ip, v.Name, v.Idx)
+		if err != nil {
+			return Value{}, err
+		}
+		cur := arr.Arr[idx]
+		newElem, err := applyUpdate(cur, v.Op, v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		ip.set(v.Name, withElem(arr, idx, newElem))
+		return newElem, nil
 	case Block:
 		return evalBlock(v, ip)
 	case If:
@@ -317,6 +354,151 @@ func branchName(taken bool) string {
 // by-reference to the call's argument variables.
 func procBody(ip *Interp, name string, args []string) (Node, error) {
 	return bindProcBody(ip.procs, name, args)
+}
+
+// arrIndex evaluates an index expression to a valid array offset.
+func arrIndex(idxNode Node, ip *Interp, length int) (int, error) {
+	iv, err := Eval(idxNode, ip)
+	if err != nil {
+		return 0, err
+	}
+	n, err := asInt(iv, "array index")
+	if err != nil {
+		return 0, err
+	}
+	if n < 0 || int(n) >= length {
+		return 0, fmt.Errorf("array index %d out of range [0, %d)", n, length)
+	}
+	return int(n), nil
+}
+
+// evalIndex evaluates an array expression and an index, returning the array
+// value and the bounds-checked offset.
+func evalIndex(arrNode, idxNode Node, ip *Interp) (Value, int, error) {
+	arr, err := Eval(arrNode, ip)
+	if err != nil {
+		return Value{}, 0, err
+	}
+	if arr.Kind != ArrKind {
+		return Value{}, 0, fmt.Errorf("cannot index %s", arr.typeName())
+	}
+	idx, err := arrIndex(idxNode, ip, len(arr.Arr))
+	return arr, idx, err
+}
+
+// evalIndexVar resolves an array variable and an index for an in-place update.
+func evalIndexVar(ip *Interp, name string, idxNode Node) (Value, int, error) {
+	arr, ok := ip.get(name)
+	if !ok {
+		return Value{}, 0, fmt.Errorf("undefined variable %q", name)
+	}
+	if arr.Kind != ArrKind {
+		return Value{}, 0, fmt.Errorf("%q is %s, not an array", name, arr.typeName())
+	}
+	idx, err := arrIndex(idxNode, ip, len(arr.Arr))
+	return arr, idx, err
+}
+
+// withElem returns a copy of arr with element i replaced — a fresh slice, so
+// the undo log's stored "before" array is never mutated.
+func withElem(arr Value, i int, v Value) Value {
+	cp := make([]Value, len(arr.Arr))
+	copy(cp, arr.Arr)
+	cp[i] = v
+	return arrVal(cp)
+}
+
+// applyUpdate computes the new element value for `cur <op> rhs`.
+func applyUpdate(cur Value, op TokKind, rhsNode Node, ip *Interp) (Value, error) {
+	if cur.Kind != NumKind {
+		return Value{}, fmt.Errorf("reversible update needs a number, element is %s", cur.typeName())
+	}
+	rhs, err := Eval(rhsNode, ip)
+	if err != nil {
+		return Value{}, err
+	}
+	switch op {
+	case PLUSEQ:
+		if rhs.Kind != NumKind {
+			return Value{}, fmt.Errorf("+= needs a number, got %s", rhs.typeName())
+		}
+		return numVal(cur.Num + rhs.Num), nil
+	case MINUSEQ:
+		if rhs.Kind != NumKind {
+			return Value{}, fmt.Errorf("-= needs a number, got %s", rhs.typeName())
+		}
+		return numVal(cur.Num - rhs.Num), nil
+	case CARETEQ:
+		l, err := asInt(cur, "^= target")
+		if err != nil {
+			return Value{}, err
+		}
+		r, err := asInt(rhs, "^= operand")
+		if err != nil {
+			return Value{}, err
+		}
+		return numVal(float64(l ^ r)), nil
+	}
+	return Value{}, fmt.Errorf("unknown update operator")
+}
+
+// evalSwap exchanges two lvalues (variables or array elements). Plain var-var
+// swaps use the dedicated reversible swap op; anything indexed reads both
+// locations and writes them back crossed.
+func evalSwap(v Swap, ip *Interp) (Value, error) {
+	if v.AI == nil && v.BI == nil {
+		if _, ok := ip.get(v.A); !ok {
+			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.A)
+		}
+		if _, ok := ip.get(v.B); !ok {
+			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.B)
+		}
+		ip.swap(v.A, v.B)
+		return nilVal(), nil
+	}
+	va, err := readLoc(ip, v.A, v.AI)
+	if err != nil {
+		return Value{}, err
+	}
+	vb, err := readLoc(ip, v.B, v.BI)
+	if err != nil {
+		return Value{}, err
+	}
+	if err := writeLoc(ip, v.A, v.AI, vb); err != nil {
+		return Value{}, err
+	}
+	if err := writeLoc(ip, v.B, v.BI, va); err != nil {
+		return Value{}, err
+	}
+	return nilVal(), nil
+}
+
+func readLoc(ip *Interp, name string, idx Node) (Value, error) {
+	if idx == nil {
+		val, ok := ip.get(name)
+		if !ok {
+			return Value{}, fmt.Errorf("undefined variable %q", name)
+		}
+		return val, nil
+	}
+	arr, i, err := evalIndexVar(ip, name, idx)
+	if err != nil {
+		return Value{}, err
+	}
+	return arr.Arr[i], nil
+}
+
+func writeLoc(ip *Interp, name string, idx Node, val Value) error {
+	if idx == nil {
+		ip.set(name, val)
+		return nil
+	}
+	arr, i, err := evalIndexVar(ip, name, idx)
+	if err != nil {
+		return err
+	}
+	ip.set(name, withElem(arr, i, val))
+	return nil
 }
 
 // evalBlock runs statements in order and yields the last value (nil if empty).
