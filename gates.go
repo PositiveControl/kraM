@@ -308,7 +308,7 @@ func (c *bitCircuit) foldIndex(idx Node) (int, error) {
 	}
 	v, err := Eval(idx, c.vals.clone())
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("cannot fold array index: %w — :gates/:verify compile from the current variables, so define the index/loop variables first", err)
 	}
 	n, err := asInt(v, "array index")
 	if err != nil {
@@ -531,7 +531,7 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 	const maxIter = 1_000_000
 	entry, err := evalCond(v.Entry, shadow, "loop entry assertion")
 	if err != nil {
-		return err
+		return fmt.Errorf("%w — :gates/:verify compile from the current variables, so set the loop variables first", err)
 	}
 	if !entry {
 		return fmt.Errorf("loop entry condition is false in the current state — :gates/:verify compile from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
