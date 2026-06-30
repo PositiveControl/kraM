@@ -39,6 +39,8 @@ type bitCircuit struct {
 	base   map[string]int  // var -> index of its bit 0
 	nwires int
 	procs  map[string]Node // procedure bodies, for inlining call/uncall
+	free_  []int           // clean (zeroed) ancilla wires available for reuse
+	noFree bool            // while true, freed wires are NOT pooled (see emitSub)
 }
 
 // compileBits lowers a reversible program to elementary gates over
@@ -89,14 +91,29 @@ func (c *bitCircuit) reg(name string) []int {
 	return w
 }
 
-// alloc reserves n fresh ancilla wires (initialised to zero).
+// alloc reserves n ancilla wires, all guaranteed zero — reusing freed ones
+// before minting new. Every allocator restores its ancillas to zero before
+// freeing, so a reused wire is always clean.
 func (c *bitCircuit) alloc(n int) []int {
 	w := make([]int, n)
 	for i := range w {
-		w[i] = c.nwires
-		c.nwires++
+		if k := len(c.free_); k > 0 {
+			w[i] = c.free_[k-1]
+			c.free_ = c.free_[:k-1]
+		} else {
+			w[i] = c.nwires
+			c.nwires++
+		}
 	}
 	return w
+}
+
+// free returns ancilla wires to the pool. The caller guarantees they hold zero.
+func (c *bitCircuit) free(wires ...int) {
+	if c.noFree {
+		return
+	}
+	c.free_ = append(c.free_, wires...)
 }
 
 func (c *bitCircuit) x(t int)          { c.gates = append(c.gates, BitGate{BX, 0, 0, t}) }
@@ -208,7 +225,8 @@ func (c *bitCircuit) emitAdd(v CompoundAssign) error {
 	}
 	c.gates = append(c.gates, add...)
 	if cleanup != nil {
-		cleanup()
+		cleanup()        // restores the constant register to zero...
+		c.free(addend...) // ...so it can be reused
 	}
 	return nil
 }
@@ -258,17 +276,25 @@ func (c *bitCircuit) emitIf(v If) error {
 	}
 
 	c.equalityToBit(x, k, q) // uncompute q (the comparator is self-inverse)
+	c.free(q)
 	return nil
 }
 
 // emitSub emits a node into a fresh gate slice, sharing the wire allocator and
 // layout, and returns the produced gates.
+// emitSub emits a node into a fresh gate slice, sharing the wire allocator and
+// layout. Freeing is suspended: ancillas the sub allocates stay live (their
+// wires are still referenced by the returned gates, which the caller will
+// re-emit with an added control), so they must not be reused meanwhile.
 func (c *bitCircuit) emitSub(n Node) ([]BitGate, error) {
 	saved := c.gates
+	savedNoFree := c.noFree
 	c.gates = nil
+	c.noFree = true
 	err := c.emit(n)
 	sub := c.gates
 	c.gates = saved
+	c.noFree = savedNoFree
 	return sub, err
 }
 
@@ -285,6 +311,7 @@ func (c *bitCircuit) appendControlled(q int, g BitGate) {
 		c.toff(q, g.A, anc)
 		c.toff(anc, g.B, g.T)
 		c.toff(q, g.A, anc) // restore anc to 0
+		c.free(anc)
 	}
 }
 
@@ -322,6 +349,7 @@ func (c *bitCircuit) mcx(controls []int, t int) {
 		c.toff(controls[i], anc[i-2], anc[i-1])
 	}
 	c.toff(controls[0], controls[1], anc[0])
+	c.free(anc...) // ladder restored to zero
 }
 
 // equalityCond extracts (varName, constant) from a `var == const` condition.
@@ -388,6 +416,7 @@ func (c *bitCircuit) adderGates(addend, target []int) []BitGate {
 	uma(z, target[0], addend[0])
 
 	c.nwires = g.nwires
+	c.free(z) // the carry ancilla is restored to zero by the adder
 	return g.gates
 }
 

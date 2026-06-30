@@ -198,6 +198,31 @@ func TestIfCircuitMatchesInterpreter(t *testing.T) {
 	}
 }
 
+// TestAncillaReuse: ancilla wires are recycled, so a straight-line program's
+// wire count is bounded by peak concurrent use, not total length.
+func TestAncillaReuse(t *testing.T) {
+	compileN := func(n int) int {
+		ops := make([]string, n)
+		for i := range ops {
+			ops[i] = "a += 1"
+		}
+		ast, err := Parse(strings.Join(ops, "; "))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bc, err := compileBits(ast, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bc.nwires
+	}
+	small, big := compileN(2), compileN(200)
+	if big != small {
+		t.Errorf("wire count grew with program length: %d ops used %d wires, %d ops used %d wires",
+			2, small, 200, big)
+	}
+}
+
 // TestUncallRoundTrip: call then uncall a procedure restores state.
 func TestUncallRoundTrip(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
