@@ -248,6 +248,20 @@ func TestArrayCircuitMatchesInterpreter(t *testing.T) {
 	}
 }
 
+// TestLocalCircuitMatchesInterpreter: local/delocal lower to ancilla
+// alloc/free; the visible registers must still match the interpreter.
+func TestLocalCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		{"x = 5", "local t = 0; t += x; delocal t = x"},
+		{"x = 5; y = 3", "local t = 0; t += x; t += y; delocal t = 8"},
+		{"x = 6", "local t = x; t -= 2; delocal t = 4"},
+		{"a = 12; b = 10", "local t = a; t ^= b; delocal t = 6"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
+	}
+}
+
 // TestProcCircuitMatchesInterpreter: parameterized procedures, inlined with
 // by-reference args, lower to gates matching the interpreter.
 func TestProcCircuitMatchesInterpreter(t *testing.T) {

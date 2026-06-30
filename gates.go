@@ -166,8 +166,28 @@ func (c *bitCircuit) emit(n Node) error {
 		}
 	case IdxAssign:
 		return fmt.Errorf("destructive element assignment is irreversible — use += / -= / ^= / <=>")
-	case Local, Delocal:
-		return fmt.Errorf("local/delocal are not lowered yet (they map to ancilla alloc/free)")
+	case Local:
+		// A local is an ancilla register: allocate it, initialise to its value.
+		wires := c.allocReg()
+		c.base[v.Name] = wires[0]
+		return c.initReg(wires, v.Value)
+	case Delocal:
+		base, ok := c.base[v.Name]
+		if !ok {
+			return fmt.Errorf("delocal of unknown register %q", v.Name)
+		}
+		wires := make([]int, bitWidth)
+		for i := range wires {
+			wires[i] = base + i
+		}
+		// initReg is self-inverse: re-running it on a register holding its init
+		// value clears it to zero (the program guarantees that value at delocal).
+		if err := c.initReg(wires, v.Value); err != nil {
+			return err
+		}
+		c.free(wires...)
+		delete(c.base, v.Name)
+		return nil
 	case ArrayLit, Index:
 		return fmt.Errorf("an array expression has no gates on its own")
 	case ProcDef:
@@ -294,6 +314,40 @@ func (c *bitCircuit) locWires(name string, idx Node) ([]int, error) {
 		return nil, err
 	}
 	return c.elemReg(name, k), nil
+}
+
+// allocReg mints a fresh contiguous bitWidth register block (for a local). It
+// does not pull from the scattered ancilla pool, so the block stays contiguous
+// for name-based addressing; its wires return to the pool when freed.
+func (c *bitCircuit) allocReg() []int {
+	w := make([]int, bitWidth)
+	for i := range w {
+		w[i] = c.nwires
+		c.nwires++
+	}
+	return w
+}
+
+// initReg sets a register to a value (constant via X, or a copy of another
+// register via CNOT). Self-inverse: applied again to a register holding that
+// value, it clears it to zero — which is how delocal uncomputes a local.
+func (c *bitCircuit) initReg(target []int, valNode Node) error {
+	w, k, isConst, err := c.operand(valNode)
+	if err != nil {
+		return err
+	}
+	if isConst {
+		for i := 0; i < bitWidth; i++ {
+			if k&(1<<uint(i)) != 0 {
+				c.x(target[i])
+			}
+		}
+		return nil
+	}
+	for i := 0; i < bitWidth; i++ {
+		c.cnot(w[i], target[i])
+	}
+	return nil
 }
 
 // elemReg returns the register for array element name[k].
@@ -812,8 +866,9 @@ func simulateBits(gates []BitGate, nwires int, init []bool) []bool {
 func collectVars(n Node, procs map[string]ProcDef) []string {
 	var order []string
 	seen := map[string]bool{}
+	local := map[string]bool{} // names introduced by `local` — allocated on the fly
 	add := func(name string) {
-		if name != "" && !seen[name] {
+		if name != "" && !local[name] && !seen[name] {
 			seen[name] = true
 			order = append(order, name)
 		}
@@ -855,6 +910,11 @@ func collectVars(n Node, procs map[string]ProcDef) []string {
 			collectCondVars(v.Exit, add)
 			walk(v.Do)
 			walk(v.Rest)
+		case Local: // a local is allocated on the fly, not in the base layout
+			local[v.Name] = true
+			addExpr(v.Value)
+		case Delocal:
+			addExpr(v.Value)
 		case Call:
 			if body, err := bindProcBody(procs, v.Name, v.Args); err == nil && !calling[v.Name] {
 				calling[v.Name] = true

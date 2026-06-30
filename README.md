@@ -81,7 +81,8 @@ it either direction — `call` forward, `uncall` backward:
 Scoped temporaries use `local` / `delocal` (the Janus discipline): `local`
 introduces a fresh variable, `delocal` removes it while asserting its value.
 They are exact inverses, so a temporary stays reversible — the asserted value is
-what lets it be removed without leaving garbage:
+what lets it be removed without leaving garbage. In circuits a local lowers to
+an **ancilla register** (allocated, used, then uncomputed and freed):
 
 ```
 > local t = 0
