@@ -8,8 +8,16 @@ import (
 )
 
 func main() {
-	in := bufio.NewScanner(os.Stdin)
 	ip := NewInterp()
+
+	// Script mode: `mlang file.ml` runs a file quietly (only print output, no
+	// prompts or echoed results), then exits.
+	if len(os.Args) > 1 {
+		runFile(os.Args[1], ip)
+		return
+	}
+
+	in := bufio.NewScanner(os.Stdin)
 	shown := 0        // output buffer entries already rendered to the terminal
 	stepping := false // a :load'ed program is mid-flight, driven by :step
 	lastCmd := ""     // last code line, for '!!' substitution
@@ -100,7 +108,7 @@ func main() {
 				fmt.Println("cannot compile to circuit:", err)
 				continue
 			}
-			fmt.Printf("reversible circuit (%d-bit registers):\n", circuitWidth)
+			fmt.Println("reversible circuit:")
 			for i, g := range gates {
 				fmt.Printf("  %2d  %s\n", i+1, g)
 			}
@@ -164,6 +172,32 @@ func main() {
 }
 
 func firstWord(line string) string { return strings.Fields(line)[0] }
+
+// runFile executes a whole source file with no REPL chrome — only print output
+// and warnings reach stdout/stderr.
+func runFile(path string, ip *Interp) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	ast, perr := Parse(string(src))
+	if perr != nil {
+		fmt.Fprintln(os.Stderr, "parse error:", perr)
+		os.Exit(1)
+	}
+	_, eerr := Eval(ast, ip)
+	for _, v := range ip.output { // flush whatever ran (even up to an error)
+		fmt.Println(v.Raw())
+	}
+	for _, w := range ip.DrainWarnings() {
+		fmt.Fprintln(os.Stderr, "⚠", w)
+	}
+	if eerr != nil {
+		fmt.Fprintln(os.Stderr, "error:", eerr)
+		os.Exit(1)
+	}
+}
 
 func printMessages(ip *Interp) {
 	for _, w := range ip.DrainWarnings() {

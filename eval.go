@@ -325,15 +325,16 @@ func evalBinary(b Binary, ip *Interp) (Value, error) {
 		return boolVal(!valEqual(l, r)), nil
 	}
 
-	// + is overloaded: numeric add or string concat.
+	// + is overloaded: numeric add, or concat if either side is a string
+	// (the non-string side is coerced to its display form).
 	if b.Op == PLUS {
 		switch {
 		case l.Kind == NumKind && r.Kind == NumKind:
 			return numVal(l.Num + r.Num), nil
-		case l.Kind == StrKind && r.Kind == StrKind:
-			return strVal(l.Str + r.Str), nil
+		case l.Kind == StrKind || r.Kind == StrKind:
+			return strVal(l.Raw() + r.Raw()), nil
 		default:
-			return Value{}, fmt.Errorf("operator + needs two numbers or two strings, got %s and %s",
+			return Value{}, fmt.Errorf("operator + needs numbers or a string, got %s and %s",
 				l.typeName(), r.typeName())
 		}
 	}

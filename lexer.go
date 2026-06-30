@@ -142,6 +142,10 @@ func Lex(src string) []Token {
 		switch {
 		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
 			i++
+		case c == '#': // line comment — skip to end of line
+			for i < len(src) && src[i] != '\n' {
+				i++
+			}
 		case c == '+':
 			if peek(src, i+1) == '=' {
 				toks = append(toks, Token{PLUSEQ, "+=", i})

@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// circuitWidth is the assumed register size for the sketch. A real backend
-// would infer or declare per-variable widths.
-const circuitWidth = 8
+// A real backend would infer or declare per-variable register widths. The
+// sketch is width-agnostic: bit positions in X gates are exact, while CNOT/SWAP
+// act on whole registers of whatever width the target turns out to be.
 
 // Gate is one reversible gate (register-level). Fields carry enough to both
 // display and *simulate* the gate; the sketch does not decompose to elementary
@@ -72,7 +72,7 @@ func lower(n Node) ([]Gate, error) {
 			return []Gate{{Op: "X", Target: v.Name, Mask: int64(val.Val), Note: "flip bit(s) " + bits}}, nil
 		case Var:
 			return []Gate{{Op: "CNOT", Ctrl: val.Name, Target: v.Name,
-				Note: fmt.Sprintf("control %s, target %s (×%d bits)", val.Name, v.Name, circuitWidth)}}, nil
+				Note: fmt.Sprintf("control %s, target %s (per bit)", val.Name, v.Name)}}, nil
 		default:
 			return []Gate{{Op: "XOR", Target: v.Name, Operand: v.Value,
 				Note: "RHS needs an ancilla register to compute first"}}, nil
@@ -80,7 +80,7 @@ func lower(n Node) ([]Gate, error) {
 
 	case Swap:
 		return []Gate{{Op: "SWAP", A: v.A, B: v.B,
-			Note: fmt.Sprintf("×%d bits = 3 CNOTs/bit (Fredkin-style)", circuitWidth)}}, nil
+			Note: "3 CNOTs per bit (Fredkin-style)"}}, nil
 
 	case CompoundAssign:
 		op := "ADD"
