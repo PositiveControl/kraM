@@ -103,7 +103,7 @@ func main() {
 				fmt.Println("parse error:", err)
 				continue
 			}
-			bc, err := compileBits(ast, ip.procs)
+			bc, err := compileBits(ast, ip)
 			if err != nil {
 				fmt.Println("cannot compile to gates:", err)
 				continue

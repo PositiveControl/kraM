@@ -41,6 +41,7 @@ type bitCircuit struct {
 	procs  map[string]Node // procedure bodies, for inlining call/uncall
 	free_  []int           // clean (zeroed) ancilla wires available for reuse
 	noFree bool            // while true, freed wires are NOT pooled (see emitSub)
+	vals   *Interp         // compile-time state, for computing static loop bounds
 }
 
 // compileBits lowers a reversible program to elementary gates over
@@ -48,10 +49,12 @@ type bitCircuit struct {
 // ancillas (carry bits, constant/condition registers) are allocated as needed
 // and always returned to zero, so they are reusable scratch. procs supplies
 // procedure definitions for inlining call/uncall (nil if none).
-func compileBits(n Node, procs map[string]Node) (*bitCircuit, error) {
-	c := &bitCircuit{base: map[string]int{}, procs: map[string]Node{}}
-	for k, v := range procs {
-		c.procs[k] = v
+func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
+	c := &bitCircuit{base: map[string]int{}, procs: map[string]Node{}, vals: ip}
+	if ip != nil {
+		for k, v := range ip.procs {
+			c.procs[k] = v
+		}
 	}
 	registerProcs(n, c.procs) // pick up procs defined within the program too
 	for _, name := range collectVars(n, c.procs) {
@@ -161,8 +164,10 @@ func (c *bitCircuit) emit(n Node) error {
 		return c.emit(inv)
 	case If:
 		return c.emitIf(v)
-	case While, ReversibleLoop:
-		return fmt.Errorf("loops have data-dependent bounds — not a fixed circuit; unroll to straight-line code")
+	case ReversibleLoop:
+		return c.emitLoop(v)
+	case While:
+		return fmt.Errorf("classic while is not reversible — use from/loop/until")
 	}
 	return fmt.Errorf("cannot compile %T to elementary gates", n)
 }
@@ -418,6 +423,105 @@ func (c *bitCircuit) geToBit(reg []int, k int64, q int) {
 
 // emitSub emits a node into a fresh gate slice, sharing the wire allocator and
 // layout, and returns the produced gates.
+// emitLoop unrolls a reversible loop. A loop's iteration count is data-
+// dependent, so it can only be a fixed circuit once that count is known: we
+// shadow-evaluate the loop on the compile-time state to get the count, then
+// emit the body that many times. The resulting circuit is specialised to that
+// count (valid for inputs that loop the same number of times). The body must
+// not itself contain a loop (each iteration would emit different gates).
+func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
+	if c.vals == nil {
+		return fmt.Errorf("cannot unroll a loop without compile-time state (set the loop variables first)")
+	}
+	if hasLoop(v.Do) || hasLoop(v.Rest) {
+		return fmt.Errorf("nested loops cannot be unrolled (each iteration would differ)")
+	}
+	count, err := loopCount(v, c.vals)
+	if err != nil {
+		return err
+	}
+	// Janus loop runs: Do, then (Rest; Do) for each further iteration.
+	if err := c.emit(v.Do); err != nil {
+		return err
+	}
+	for k := 1; k < count; k++ {
+		if err := c.emit(v.Rest); err != nil {
+			return err
+		}
+		if err := c.emit(v.Do); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loopCount shadow-evaluates a reversible loop on a clone of the compile-time
+// state and returns how many times the loop body (Do) runs.
+func loopCount(v ReversibleLoop, vals *Interp) (int, error) {
+	ip := vals.clone()
+	const maxIter = 1_000_000
+	entry, err := evalCond(v.Entry, ip, "loop entry assertion")
+	if err != nil {
+		return 0, err
+	}
+	if !entry {
+		return 0, fmt.Errorf("loop entry assertion fails at compile time")
+	}
+	if _, err := Eval(v.Do, ip); err != nil {
+		return 0, err
+	}
+	count := 1
+	for {
+		exit, err := evalCond(v.Exit, ip, "loop exit assertion")
+		if err != nil {
+			return 0, err
+		}
+		if exit {
+			return count, nil
+		}
+		if count >= maxIter {
+			return 0, fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
+		}
+		if _, err := Eval(v.Rest, ip); err != nil {
+			return 0, err
+		}
+		reentry, err := evalCond(v.Entry, ip, "loop re-entry assertion")
+		if err != nil {
+			return 0, err
+		}
+		if reentry {
+			return 0, fmt.Errorf("loop re-entry assertion violated at compile time")
+		}
+		if _, err := Eval(v.Do, ip); err != nil {
+			return 0, err
+		}
+		count++
+	}
+}
+
+// hasLoop reports whether a node contains any loop.
+func hasLoop(n Node) bool {
+	found := false
+	var walk func(Node)
+	walk = func(n Node) {
+		switch v := n.(type) {
+		case Block:
+			for _, s := range v.Stmts {
+				walk(s)
+			}
+		case If:
+			walk(v.Then)
+			if v.Else != nil {
+				walk(v.Else)
+			}
+		case While, ReversibleLoop:
+			found = true
+		}
+	}
+	walk(n)
+	return found
+}
+
 // emitSub emits a node into a fresh gate slice, sharing the wire allocator and
 // layout. Freeing is suspended: ancillas the sub allocates stay live (their
 // wires are still referenced by the returned gates, which the caller will
@@ -663,6 +767,11 @@ func collectVars(n Node, procs map[string]Node) []string {
 			if v.Else != nil {
 				walk(v.Else)
 			}
+		case ReversibleLoop:
+			collectCondVars(v.Entry, add)
+			collectCondVars(v.Exit, add)
+			walk(v.Do)
+			walk(v.Rest)
 		case Call:
 			if body, ok := procs[v.Name]; ok && !calling[v.Name] {
 				calling[v.Name] = true

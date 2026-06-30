@@ -138,7 +138,7 @@ func bitMatchesInterp(t *testing.T, initSrc, progSrc string) {
 		t.Fatalf("eval %q: %v", progSrc, err)
 	}
 
-	bc, err := compileBits(progAst, ip.procs)
+	bc, err := compileBits(progAst, ip)
 	if err != nil {
 		t.Fatalf("compileBits %q: %v", progSrc, err)
 	}
@@ -209,6 +209,24 @@ func TestIfCircuitMatchesInterpreter(t *testing.T) {
 		{"r = 0; x = 2; y = 7", "if x > y { r += 1 } else { r += 2 } assert x > y"},
 		{"r = 0; x = 6; y = 6", "if x <= y { r += 1 } else { r += 2 } assert x <= y"},
 		{"r = 0; x = 6; y = 6", "if x != y { r += 1 } else { r += 2 } assert x != y"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
+	}
+}
+
+// TestLoopCircuitMatchesInterpreter: a reversible loop unrolled to gates (using
+// the compile-time iteration count) must match the interpreter.
+func TestLoopCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		// counter loop, empty Rest: Do runs n times
+		{"s = 0; i = 0; n = 4", "from i == 0 { s += 2; i += 1 } loop { } until i == n"},
+		// non-empty Rest
+		{"s = 0; i = 0; n = 3", "from i == 0 { i += 1 } loop { s += 5 } until i == n"},
+		// loop that does real arithmetic each step
+		{"acc = 1; i = 0; n = 5", "from i == 0 { acc ^= 3; i += 1 } loop { } until i == n"},
+		// single iteration
+		{"i = 0; x = 0", "from i == 0 { x += 9; i += 1 } loop { } until i == 1"},
 	}
 	for _, tc := range cases {
 		bitMatchesInterp(t, tc.init, tc.prog)
