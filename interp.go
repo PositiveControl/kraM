@@ -210,6 +210,32 @@ func (ip *Interp) xor(name string, mask int64) {
 	ip.do(xorEdit{name: name, mask: mask})
 }
 
+// checkpoint captures enough state to roll back a partially-applied line,
+// making a top-level statement atomic: if it errors part-way, its mutations
+// (and any output/warnings) are erased, not left half-done.
+type checkpoint struct {
+	pastLen int
+	fut     []reversible
+}
+
+func (ip *Interp) checkpoint() checkpoint {
+	return checkpoint{pastLen: len(ip.past), fut: append([]reversible(nil), ip.fut...)}
+}
+
+// rollback erases every mutation recorded since cp, reverting state, and
+// discards advisory messages from the failed line. The undone edits are erased
+// (not moved to the redo stack) — a failed line is as if it never ran.
+func (ip *Interp) rollback(cp checkpoint) {
+	for len(ip.past) > cp.pastLen {
+		r := ip.past[len(ip.past)-1]
+		ip.past = ip.past[:len(ip.past)-1]
+		r.undo(ip)
+	}
+	ip.fut = cp.fut
+	ip.warnings = nil
+	ip.notes = nil
+}
+
 // Undo reverses the most recent operation. Returns false if there is no history.
 func (ip *Interp) Undo() (reversible, bool) {
 	if len(ip.past) == 0 {

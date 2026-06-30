@@ -157,8 +157,10 @@ func main() {
 			fmt.Println("parse error:", err)
 			continue
 		}
+		cp := ip.checkpoint()
 		val, err := Eval(ast, ip)
 		if err != nil {
+			ip.rollback(cp) // atomic: a failed line leaves no partial mutations
 			fmt.Println("error:", err)
 			continue
 		}

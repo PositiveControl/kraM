@@ -71,5 +71,5 @@ Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 
 ## Status
 
-Early sketch. The circuit backend is register-level only, `+=`/`-=` aren't
-bit-exact (`^=` is), and a failed multi-statement line isn't yet atomic.
+Early sketch. The circuit backend is register-level only, and `+=`/`-=` aren't
+bit-exact (`^=` is).
