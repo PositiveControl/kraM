@@ -58,6 +58,26 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":circuit") {
+			code := strings.TrimSpace(strings.TrimPrefix(line, ":circuit"))
+			ast, err := Parse(code)
+			if err != nil {
+				fmt.Println("parse error:", err)
+				continue
+			}
+			gates, err := lower(ast)
+			if err != nil {
+				fmt.Println("cannot compile to circuit:", err)
+				continue
+			}
+			fmt.Printf("reversible circuit (%d-bit registers):\n", circuitWidth)
+			for i, g := range gates {
+				fmt.Printf("  %2d  %s\n", i+1, g)
+			}
+			fmt.Printf("%d gate(s)\n", len(gates))
+			continue
+		}
+
 		if strings.HasPrefix(line, ":invert") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":invert"))
 			ast, err := Parse(code)
@@ -170,6 +190,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(ip.OutputString())
 	case ":help":
 		fmt.Println(":invert CODE  print the structural inverse of a program")
+		fmt.Println(":circuit CODE compile reversible code to a gate netlist")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")
