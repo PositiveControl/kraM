@@ -42,6 +42,15 @@ type Assert struct{ Cond Node }
 // Reverse runs the structural inverse of its body — backward execution derived
 // from program text, not from the undo log.
 type Reverse struct{ Body Node }
+
+// ReversibleLoop is the Janus loop: from ENTRY { Do } loop { Rest } until EXIT.
+// ENTRY must hold on first entry and fail on every re-entry; the loop ends when
+// EXIT holds. Those assertions make it invertible without a log.
+type ReversibleLoop struct {
+	Entry    Node
+	Do, Rest Node
+	Exit     Node
+}
 type While struct {
 	Cond, Body Node
 }
@@ -54,21 +63,22 @@ type Binary struct {
 	Left, Right Node
 }
 
-func (NumberLit) node() {}
-func (BoolLit) node()   {}
-func (StrLit) node()    {}
-func (Var) node()       {}
-func (Assign) node()    {}
+func (NumberLit) node()      {}
+func (BoolLit) node()        {}
+func (StrLit) node()         {}
+func (Var) node()            {}
+func (Assign) node()         {}
 func (Print) node()          {}
 func (CompoundAssign) node() {}
 func (Swap) node()           {}
-func (Block) node()     {}
-func (If) node()        {}
-func (While) node()     {}
-func (Assert) node()    {}
-func (Reverse) node()   {}
-func (Unary) node()     {}
-func (Binary) node()    {}
+func (Block) node()          {}
+func (If) node()             {}
+func (While) node()          {}
+func (Assert) node()         {}
+func (Reverse) node()        {}
+func (ReversibleLoop) node() {}
+func (Unary) node()          {}
+func (Binary) node()         {}
 
 // ---- Pratt parser ----
 
@@ -143,6 +153,15 @@ func (p *Parser) parseStmt() Node {
 	case REVERSE:
 		p.advance()
 		return Reverse{Body: p.parseBlock()}
+	case FROM:
+		p.advance()
+		entry := p.parseExpr(0)
+		do := p.parseBlock()
+		p.expect(LOOP, "'loop'")
+		rest := p.parseBlock()
+		p.expect(UNTIL, "'until'")
+		exit := p.parseExpr(0)
+		return ReversibleLoop{Entry: entry, Do: do, Rest: rest, Exit: exit}
 	case WHILE:
 		p.advance()
 		cond := p.parseExpr(0)
@@ -273,6 +292,15 @@ func (p *Parser) parsePrefix() Node {
 		p.fail("unexpected %s", t)
 		return nil
 	}
+}
+
+// expect consumes a token of the given kind or records an error.
+func (p *Parser) expect(k TokKind, what string) {
+	if p.cur().Kind != k {
+		p.fail("expected %s, got %s", what, p.cur())
+		return
+	}
+	p.advance()
 }
 
 func (p *Parser) fail(format string, args ...any) {

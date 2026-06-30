@@ -113,6 +113,8 @@ func Eval(n Node, ip *Interp) (Value, error) {
 			return Value{}, err
 		}
 		return Eval(inv, ip)
+	case ReversibleLoop:
+		return evalReversibleLoop(v, ip)
 	case While:
 		// ponytail: hard iteration cap so a runaway loop can't fill the undo
 		// history unbounded. Raise it / make it configurable if real programs hit it.
@@ -145,6 +147,49 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		return evalBinary(v, ip)
 	}
 	return Value{}, fmt.Errorf("cannot evaluate %T", n)
+}
+
+// evalReversibleLoop runs `from Entry { Do } loop { Rest } until Exit`. Entry
+// must hold on first entry and must fail on every re-entry; the loop ends when
+// Exit holds. Those assertions are what let the loop run backward without a
+// log — the inverse just swaps Entry and Exit.
+func evalReversibleLoop(v ReversibleLoop, ip *Interp) (Value, error) {
+	const maxIter = 1_000_000
+	entry, err := evalCond(v.Entry, ip, "loop entry assertion")
+	if err != nil {
+		return Value{}, err
+	}
+	if !entry {
+		return Value{}, fmt.Errorf("loop entry assertion failed")
+	}
+	if _, err := Eval(v.Do, ip); err != nil {
+		return Value{}, err
+	}
+	for i := 0; ; i++ {
+		exit, err := evalCond(v.Exit, ip, "loop exit assertion")
+		if err != nil {
+			return Value{}, err
+		}
+		if exit {
+			return nilVal(), nil
+		}
+		if i >= maxIter {
+			return Value{}, fmt.Errorf("reversible loop exceeded %d iterations", maxIter)
+		}
+		if _, err := Eval(v.Rest, ip); err != nil {
+			return Value{}, err
+		}
+		reentry, err := evalCond(v.Entry, ip, "loop re-entry assertion")
+		if err != nil {
+			return Value{}, err
+		}
+		if reentry {
+			return Value{}, fmt.Errorf("loop re-entry assertion violated: entry condition held again")
+		}
+		if _, err := Eval(v.Do, ip); err != nil {
+			return Value{}, err
+		}
+	}
 }
 
 // evalCond evaluates a node that must be a bool, naming the context on error.

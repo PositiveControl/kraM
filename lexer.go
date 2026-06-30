@@ -40,6 +40,9 @@ const (
 	SWAP    // <=> reversible swap
 	ASSERT  // assert (reversible runtime check)
 	REVERSE // reverse { ... } (run a block's structural inverse)
+	FROM    // from (reversible loop entry)
+	LOOP    // loop (reversible loop step)
+	UNTIL   // until (reversible loop exit)
 )
 
 type Token struct {
@@ -116,6 +119,12 @@ func kindName(k TokKind) string {
 		return "ASSERT"
 	case REVERSE:
 		return "REVERSE"
+	case FROM:
+		return "FROM"
+	case LOOP:
+		return "LOOP"
+	case UNTIL:
+		return "UNTIL"
 	default:
 		return "ILLEGAL"
 	}
@@ -261,6 +270,12 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{ASSERT, word, start})
 			case "reverse":
 				toks = append(toks, Token{REVERSE, word, start})
+			case "from":
+				toks = append(toks, Token{FROM, word, start})
+			case "loop":
+				toks = append(toks, Token{LOOP, word, start})
+			case "until":
+				toks = append(toks, Token{UNTIL, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

@@ -56,6 +56,18 @@ func invert(n Node) (Node, error) {
 		}
 		return If{Cond: v.Exit, Then: then, Else: els, Exit: v.Cond}, nil
 
+	case ReversibleLoop:
+		// Swap entry and exit conditions, invert both bodies.
+		do, err := invert(v.Do)
+		if err != nil {
+			return nil, err
+		}
+		rest, err := invert(v.Rest)
+		if err != nil {
+			return nil, err
+		}
+		return ReversibleLoop{Entry: v.Exit, Do: do, Rest: rest, Exit: v.Entry}, nil
+
 	case Assign:
 		return nil, fmt.Errorf("cannot reverse destructive assignment of %q; use += / -= / <=>", v.Name)
 	case Print:
