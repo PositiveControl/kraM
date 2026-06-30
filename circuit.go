@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -175,8 +176,6 @@ func verify(ast Node, ip *Interp) (string, error) {
 		return b.String(), nil
 	}
 
-	m := int64(1) << bitWidth
-	mask := func(v int64) int64 { return ((v % m) + m) % m }
 	names := make([]string, 0, len(bc.base))
 	for k := range bc.base {
 		names = append(names, k)
@@ -192,14 +191,13 @@ func verify(ast Node, ip *Interp) (string, error) {
 				got |= 1 << uint(bit)
 			}
 		}
-		iv := clone.vars[n].val
-		want := mask(int64(iv.Num))
+		want, ok := regWant(clone, n)
 		mark := "ok"
-		if iv.Kind != NumKind || want != got {
+		if !ok || want != got {
 			mark = "MISMATCH"
 			match = false
 		}
-		fmt.Fprintf(&b, "  %s: interp=%s circuit=%d  %s\n", n, iv, got, mark)
+		fmt.Fprintf(&b, "  %s: interp=%d circuit=%d  %s\n", n, want, got, mark)
 	}
 	if match {
 		b.WriteString("MATCH — gate circuit agrees with interpreter")
@@ -209,15 +207,64 @@ func verify(ast Node, ip *Interp) (string, error) {
 	return b.String(), nil
 }
 
-// registersFrom snapshots the integer-valued variables as initial registers.
+// registersFrom snapshots integer-valued variables as initial registers; arrays
+// are expanded element-by-element (a[k]) so constant-index circuits can load
+// their starting values.
 func registersFrom(ip *Interp) map[string]int64 {
 	reg := map[string]int64{}
+	intOf := func(v Value) (int64, bool) {
+		if v.Kind == NumKind && v.Num == math.Trunc(v.Num) {
+			return int64(v.Num), true
+		}
+		return 0, false
+	}
 	for k, b := range ip.vars {
-		if b.exists && b.val.Kind == NumKind && b.val.Num == math.Trunc(b.val.Num) {
-			reg[k] = int64(b.val.Num)
+		if !b.exists {
+			continue
+		}
+		if n, ok := intOf(b.val); ok {
+			reg[k] = n
+		} else if b.val.Kind == ArrKind {
+			for i, e := range b.val.Arr {
+				if n, ok := intOf(e); ok {
+					reg[elemKey(k, i)] = n
+				}
+			}
 		}
 	}
 	return reg
+}
+
+// splitElemKey splits an element register key "name[k]" into its parts.
+func splitElemKey(key string) (string, int, bool) {
+	i := strings.IndexByte(key, '[')
+	if i < 0 || !strings.HasSuffix(key, "]") {
+		return key, 0, false
+	}
+	idx, err := strconv.Atoi(key[i+1 : len(key)-1])
+	if err != nil {
+		return key, 0, false
+	}
+	return key[:i], idx, true
+}
+
+// regWant returns the interpreter's expected value (mod 2^bitWidth) for a
+// register key, resolving array element keys against the array variable.
+func regWant(clone *Interp, key string) (int64, bool) {
+	m := int64(1) << bitWidth
+	mask := func(v int64) int64 { return ((v % m) + m) % m }
+	if name, idx, isElem := splitElemKey(key); isElem {
+		arr := clone.vars[name].val
+		if arr.Kind != ArrKind || idx >= len(arr.Arr) || arr.Arr[idx].Kind != NumKind {
+			return 0, false
+		}
+		return mask(int64(arr.Arr[idx].Num)), true
+	}
+	v := clone.vars[key].val
+	if v.Kind != NumKind {
+		return 0, false
+	}
+	return mask(int64(v.Num)), true
 }
 
 // operandInt evaluates an expression against register state to an integer.

@@ -115,11 +115,6 @@ func TestInterpreterMatchesCircuit(t *testing.T) {
 	}
 }
 
-func maskW(v int64) int64 {
-	m := int64(1) << bitWidth
-	return ((v % m) + m) % m
-}
-
 // bitMatchesInterp compiles progSrc to elementary gates, simulates it from the
 // state produced by initSrc, and asserts every register agrees with the
 // interpreter (mod 2^bitWidth).
@@ -158,9 +153,10 @@ func bitMatchesInterp(t *testing.T, initSrc, progSrc string) {
 				got |= 1 << uint(b)
 			}
 		}
-		if want := maskW(int64(clone.vars[name].val.Num)); got != want {
-			t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d\ninit: %s\nprog: %s",
-				name, got, want, initSrc, progSrc)
+		want, ok := regWant(clone, name)
+		if !ok || got != want {
+			t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d ok=%v\ninit: %s\nprog: %s",
+				name, got, want, ok, initSrc, progSrc)
 		}
 	}
 }
@@ -227,6 +223,25 @@ func TestLoopCircuitMatchesInterpreter(t *testing.T) {
 		{"acc = 1; i = 0; n = 5", "from i == 0 { acc ^= 3; i += 1 } loop { } until i == n"},
 		// single iteration
 		{"i = 0; x = 0", "from i == 0 { x += 9; i += 1 } loop { } until i == 1"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
+	}
+}
+
+// TestArrayCircuitMatchesInterpreter: constant-index (and loop-folded-index)
+// array element operations lower to gates matching the interpreter.
+func TestArrayCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		{"a = [1, 2, 3]", "a[0] += 5"},
+		{"a = [1, 2, 3]", "a[2] ^= 6"},
+		{"a = [1, 2, 3]", "a[0] <=> a[2]"},
+		{"a = [10, 20, 30]; x = 4", "a[1] += x"},
+		{"a = [1, 2, 3]", "a[0] += 5; a[1] -= 2; a[2] ^= 3; a[0] <=> a[1]"},
+		// loop with a loop-varying index, unrolled (indices fold per iteration)
+		{"xs = [1, 2, 3, 4]; i = 0; n = 4", "from i == 0 { } loop { xs[i] += 1; i += 1 } until i == n"},
+		// in-place reversal via swaps with a computed index
+		{"xs = [1, 2, 3, 4]; i = 0; n = 4", "from i == 0 { } loop { xs[i] <=> xs[n - 1 - i]; i += 1 } until i == 2"},
 	}
 	for _, tc := range cases {
 		bitMatchesInterp(t, tc.init, tc.prog)

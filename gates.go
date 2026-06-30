@@ -137,18 +137,37 @@ func (c *bitCircuit) emit(n Node) error {
 	case CompoundAssign:
 		return c.emitAdd(v)
 	case Swap:
-		if v.AI != nil || v.BI != nil {
-			return fmt.Errorf("arrays are not supported in circuits (dynamic indexing has no fixed wiring)")
+		x, err := c.locWires(v.A, v.AI)
+		if err != nil {
+			return err
 		}
-		x, y := c.reg(v.A), c.reg(v.B)
+		y, err := c.locWires(v.B, v.BI)
+		if err != nil {
+			return err
+		}
 		for i := 0; i < bitWidth; i++ { // swap = 3 CNOTs per bit
 			c.cnot(x[i], y[i])
 			c.cnot(y[i], x[i])
 			c.cnot(x[i], y[i])
 		}
 		return nil
-	case ArrayLit, Index, IdxAssign, IdxUpdate:
-		return fmt.Errorf("arrays are not supported in circuits (dynamic indexing has no fixed wiring)")
+	case IdxUpdate:
+		reg, err := c.locWires(v.Name, v.Idx)
+		if err != nil {
+			return err
+		}
+		switch v.Op {
+		case PLUSEQ:
+			return c.addInto(reg, PLUS, v.Value)
+		case MINUSEQ:
+			return c.addInto(reg, MINUS, v.Value)
+		default: // CARETEQ
+			return c.xorInto(reg, v.Value)
+		}
+	case IdxAssign:
+		return fmt.Errorf("destructive element assignment is irreversible — use += / -= / ^= / <=>")
+	case ArrayLit, Index:
+		return fmt.Errorf("an array expression has no gates on its own")
 	case ProcDef:
 		return nil // definition only — registered in compileBits, emits nothing
 	case Call:
@@ -177,39 +196,45 @@ func (c *bitCircuit) emit(n Node) error {
 	return fmt.Errorf("cannot compile %T to elementary gates", n)
 }
 
-func (c *bitCircuit) emitXor(v XorAssign) error {
-	x := c.reg(v.Name)
-	switch val := v.Value.(type) {
-	case NumberLit:
-		k := int64(val.Val)
+func (c *bitCircuit) emitXor(v XorAssign) error { return c.xorInto(c.reg(v.Name), v.Value) }
+func (c *bitCircuit) emitAdd(v CompoundAssign) error {
+	return c.addInto(c.reg(v.Name), v.Op, v.Value)
+}
+
+// xorInto emits target ^= operand. The operand is a constant (X on set bits) or
+// another register (CNOT per bit).
+func (c *bitCircuit) xorInto(target []int, valNode Node) error {
+	w, k, isConst, err := c.operand(valNode)
+	if err != nil {
+		return err
+	}
+	if isConst {
 		for i := 0; i < bitWidth; i++ {
 			if k&(1<<uint(i)) != 0 {
-				c.x(x[i]) // XOR by constant = NOT on set bits
+				c.x(target[i])
 			}
 		}
 		return nil
-	case Var:
-		if val.Name == v.Name {
-			return fmt.Errorf("cannot compile self-referential %q ^= %q", v.Name, v.Name)
-		}
-		y := c.reg(val.Name)
-		for i := 0; i < bitWidth; i++ {
-			c.cnot(y[i], x[i]) // XOR from another register = CNOT per bit
-		}
-		return nil
 	}
-	return fmt.Errorf("^= operand must be a constant or a variable to compile")
+	if w[0] == target[0] {
+		return fmt.Errorf("cannot compile a self-referential ^=")
+	}
+	for i := 0; i < bitWidth; i++ {
+		c.cnot(w[i], target[i])
+	}
+	return nil
 }
 
-func (c *bitCircuit) emitAdd(v CompoundAssign) error {
-	target := c.reg(v.Name)
+// addInto emits target += operand (op PLUS) or -= (op MINUS), via the Cuccaro
+// adder. A constant operand is materialised in scratch, added, then uncomputed.
+func (c *bitCircuit) addInto(target []int, op TokKind, valNode Node) error {
+	w, k, isConst, err := c.operand(valNode)
+	if err != nil {
+		return err
+	}
 	var addend []int
 	var cleanup func()
-
-	switch val := v.Value.(type) {
-	case NumberLit:
-		// Materialise the constant in a fresh register, add, then uncompute it.
-		k := int64(val.Val)
+	if isConst {
 		addend = c.alloc(bitWidth)
 		set := func() {
 			for i := 0; i < bitWidth; i++ {
@@ -219,26 +244,80 @@ func (c *bitCircuit) emitAdd(v CompoundAssign) error {
 			}
 		}
 		set()
-		cleanup = set // X is self-inverse, so the same gates clear it
-	case Var:
-		if val.Name == v.Name {
-			return fmt.Errorf("cannot compile self-referential %q += %q", v.Name, v.Name)
+		cleanup = set
+	} else {
+		if w[0] == target[0] {
+			return fmt.Errorf("cannot compile a self-referential += / -=")
 		}
-		addend = c.reg(val.Name)
-	default:
-		return fmt.Errorf("+= operand must be a constant or a variable to compile")
+		addend = w
 	}
-
 	add := c.adderGates(addend, target)
-	if v.Op == MINUS {
-		add = inverseGates(add) // subtraction is the adder run backward
+	if op == MINUS {
+		add = inverseGates(add)
 	}
 	c.gates = append(c.gates, add...)
 	if cleanup != nil {
-		cleanup()        // restores the constant register to zero...
-		c.free(addend...) // ...so it can be reused
+		cleanup()
+		c.free(addend...)
 	}
 	return nil
+}
+
+// operand resolves a += / ^= right-hand value to a constant or a register.
+func (c *bitCircuit) operand(node Node) (wires []int, k int64, isConst bool, err error) {
+	switch n := node.(type) {
+	case NumberLit:
+		return nil, int64(n.Val), true, nil
+	case Var:
+		return c.reg(n.Name), 0, false, nil
+	case Index:
+		base, ok := n.Arr.(Var)
+		if !ok {
+			return nil, 0, false, fmt.Errorf("only single-level array indexing compiles")
+		}
+		w, e := c.locWires(base.Name, n.Idx)
+		return w, 0, false, e
+	}
+	return nil, 0, false, fmt.Errorf("operand must be a constant, variable, or constant-index element")
+}
+
+// locWires resolves an lvalue (variable or constant-index element) to its
+// register wires. A non-nil index is folded to a constant at compile time.
+func (c *bitCircuit) locWires(name string, idx Node) ([]int, error) {
+	if idx == nil {
+		return c.reg(name), nil
+	}
+	k, err := c.foldIndex(idx)
+	if err != nil {
+		return nil, err
+	}
+	return c.elemReg(name, k), nil
+}
+
+// elemReg returns the register for array element name[k].
+func (c *bitCircuit) elemReg(name string, k int) []int { return c.reg(elemKey(name, k)) }
+
+func elemKey(name string, k int) string { return fmt.Sprintf("%s[%d]", name, k) }
+
+// foldIndex evaluates an index expression to a constant using compile-time
+// state. Loop unrolling advances that state per iteration, so a loop-varying
+// index like a[n-1-i] folds correctly each pass.
+func (c *bitCircuit) foldIndex(idx Node) (int, error) {
+	if c.vals == nil {
+		return 0, fmt.Errorf("array index must be a compile-time constant (compile from known state)")
+	}
+	v, err := Eval(idx, c.vals.clone())
+	if err != nil {
+		return 0, err
+	}
+	n, err := asInt(v, "array index")
+	if err != nil {
+		return 0, err
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("negative array index %d", n)
+	}
+	return int(n), nil
 }
 
 // emitIf lowers a reversible if to controlled gates: compute the condition into
@@ -441,67 +520,60 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 	if hasLoop(v.Do) || hasLoop(v.Rest) {
 		return fmt.Errorf("nested loops cannot be unrolled (each iteration would differ)")
 	}
-	count, err := loopCount(v, c.vals)
-	if err != nil {
-		return err
-	}
-	// Janus loop runs: Do, then (Rest; Do) for each further iteration.
-	if err := c.emit(v.Do); err != nil {
-		return err
-	}
-	for k := 1; k < count; k++ {
-		if err := c.emit(v.Rest); err != nil {
-			return err
-		}
-		if err := c.emit(v.Do); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+	// Unroll against an advancing shadow state: each body is emitted with c.vals
+	// at that iteration (so a loop-varying array index like a[n-1-i] folds to the
+	// right element), then the shadow is advanced by executing the body.
+	shadow := c.vals.clone()
+	saved := c.vals
+	c.vals = shadow
+	defer func() { c.vals = saved }()
 
-// loopCount shadow-evaluates a reversible loop on a clone of the compile-time
-// state and returns how many times the loop body (Do) runs.
-func loopCount(v ReversibleLoop, vals *Interp) (int, error) {
-	ip := vals.clone()
 	const maxIter = 1_000_000
-	entry, err := evalCond(v.Entry, ip, "loop entry assertion")
+	entry, err := evalCond(v.Entry, shadow, "loop entry assertion")
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if !entry {
-		return 0, fmt.Errorf("loop entry condition is false in the current state — :gates/:verify compile from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
+		return fmt.Errorf("loop entry condition is false in the current state — :gates/:verify compile from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
 	}
-	if _, err := Eval(v.Do, ip); err != nil {
-		return 0, err
+	if err := c.emitBody(v.Do, shadow); err != nil {
+		return err
 	}
-	count := 1
-	for {
-		exit, err := evalCond(v.Exit, ip, "loop exit assertion")
+	for count := 1; ; count++ {
+		exit, err := evalCond(v.Exit, shadow, "loop exit assertion")
 		if err != nil {
-			return 0, err
+			return err
 		}
 		if exit {
-			return count, nil
+			return nil
 		}
 		if count >= maxIter {
-			return 0, fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
+			return fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
 		}
-		if _, err := Eval(v.Rest, ip); err != nil {
-			return 0, err
+		if err := c.emitBody(v.Rest, shadow); err != nil {
+			return err
 		}
-		reentry, err := evalCond(v.Entry, ip, "loop re-entry assertion")
+		reentry, err := evalCond(v.Entry, shadow, "loop re-entry assertion")
 		if err != nil {
-			return 0, err
+			return err
 		}
 		if reentry {
-			return 0, fmt.Errorf("loop re-entry assertion violated at compile time")
+			return fmt.Errorf("loop re-entry assertion violated at compile time")
 		}
-		if _, err := Eval(v.Do, ip); err != nil {
-			return 0, err
+		if err := c.emitBody(v.Do, shadow); err != nil {
+			return err
 		}
-		count++
 	}
+}
+
+// emitBody emits one loop-body pass against the shadow, then advances the
+// shadow by executing the body so the next pass folds indices correctly.
+func (c *bitCircuit) emitBody(body Node, shadow *Interp) error {
+	if err := c.emit(body); err != nil {
+		return err
+	}
+	_, err := Eval(body, shadow)
+	return err
 }
 
 // hasLoop reports whether a node contains any loop.
@@ -764,8 +836,12 @@ func collectVars(n Node, procs map[string]ProcDef) []string {
 			add(v.Name)
 			addExpr(v.Value)
 		case Swap:
-			add(v.A)
-			add(v.B)
+			if v.AI == nil { // indexed operands use lazily-created element registers
+				add(v.A)
+			}
+			if v.BI == nil {
+				add(v.B)
+			}
 		case If:
 			collectCondVars(v.Cond, add)
 			walk(v.Then)

@@ -147,6 +147,9 @@ via an equality check or a subtract-based comparator, to controlled gates.
 Reversible loops are unrolled using the iteration count from the current state
 (the circuit is specialised to that count); nested loops can't be unrolled. Ancilla wires are recycled, so a circuit's width is bounded by
 peak concurrent scratch, not program length. `+=`/`-=` aren't bit-exact in the
-*interpreter* (`^=` is); the *gate* circuit is exact mod 2^16. Arrays work in the
-interpreter (reversible element ops) but are not lowered to circuits — dynamic
-indexing has no fixed wiring.
+*interpreter* (`^=` is); the *gate* circuit is exact mod 2^16. Array element ops
+lower to circuits when the index folds to a constant at compile time — including
+loop-varying indices like `xs[n-1-i]`, which fold per unrolled iteration (each
+element becomes its own register). Genuinely dynamic indexing (a runtime address
+the compiler can't fold) would need a reversible address decoder and is not
+lowered.
