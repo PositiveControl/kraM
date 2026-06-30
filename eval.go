@@ -2,32 +2,30 @@ package main
 
 import "fmt"
 
-// Env holds variable bindings. One scope for now.
-type Env map[string]Value
-
 // Eval walks the AST and returns a Value. Types are checked here at runtime —
-// that runtime check IS what "dynamic typing" means.
-func Eval(n Node, env Env) (Value, error) {
+// that runtime check IS what "dynamic typing" means. All state lives in the
+// Interp, and every mutation it performs is reversible.
+func Eval(n Node, ip *Interp) (Value, error) {
 	switch v := n.(type) {
 	case NumberLit:
 		return numVal(v.Val), nil
 	case BoolLit:
 		return boolVal(v.Val), nil
 	case Var:
-		val, ok := env[v.Name]
+		val, ok := ip.get(v.Name)
 		if !ok {
 			return Value{}, fmt.Errorf("undefined variable %q", v.Name)
 		}
 		return val, nil
 	case Assign:
-		val, err := Eval(v.Value, env)
+		val, err := Eval(v.Value, ip)
 		if err != nil {
 			return Value{}, err
 		}
-		env[v.Name] = val
+		ip.set(v.Name, val) // records the inverse for time travel
 		return val, nil
 	case Unary:
-		r, err := Eval(v.Right, env)
+		r, err := Eval(v.Right, ip)
 		if err != nil {
 			return Value{}, err
 		}
@@ -36,17 +34,17 @@ func Eval(n Node, env Env) (Value, error) {
 		}
 		return numVal(-r.Num), nil
 	case Binary:
-		return evalBinary(v, env)
+		return evalBinary(v, ip)
 	}
 	return Value{}, fmt.Errorf("cannot evaluate %T", n)
 }
 
-func evalBinary(b Binary, env Env) (Value, error) {
-	l, err := Eval(b.Left, env)
+func evalBinary(b Binary, ip *Interp) (Value, error) {
+	l, err := Eval(b.Left, ip)
 	if err != nil {
 		return Value{}, err
 	}
-	r, err := Eval(b.Right, env)
+	r, err := Eval(b.Right, ip)
 	if err != nil {
 		return Value{}, err
 	}
