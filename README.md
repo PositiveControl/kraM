@@ -1,7 +1,7 @@
-# mlang
+# kraMLang
 
 An experimental **reversible** programming language with a time-travel REPL,
-written in Go.
+written in Go. Short name: **kraM** (it's "Mark" reversed — fitting).
 
 Every change to state is recorded with its inverse, so you can step backwards
 through anything you run. A subset of the language is reversible *by

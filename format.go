@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// format renders an AST node back to mlang source. It is a display tool (for
+// format renders an AST node back to kraM source. It is a display tool (for
 // :invert, errors, traces), not a strict serializer — expressions are printed
 // flat, relying on precedence rather than wrapping everything in parens.
 func format(n Node) string {

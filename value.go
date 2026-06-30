@@ -12,7 +12,7 @@ const (
 	StrKind
 )
 
-// Value is mlang's universal value. Tagged union — add a field + kind to grow.
+// Value is kraM's universal value. Tagged union — add a field + kind to grow.
 // Cheap to copy, no heap games.
 type Value struct {
 	Kind ValueKind

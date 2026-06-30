@@ -10,7 +10,7 @@ import (
 func main() {
 	ip := NewInterp()
 
-	// Script mode: `mlang file.ml` runs a file quietly (only print output, no
+	// Script mode: `kraM file.ml` runs a file quietly (only print output, no
 	// prompts or echoed results), then exits.
 	if len(os.Args) > 1 {
 		runFile(os.Args[1], ip)
@@ -21,7 +21,7 @@ func main() {
 	shown := 0        // output buffer entries already rendered to the terminal
 	stepping := false // a :load'ed program is mid-flight, driven by :step
 	lastCmd := ""     // last code line, for '!!' substitution
-	fmt.Println("mlang — reversible REPL. :help for commands, Ctrl-D to exit.")
+	fmt.Println("kraMLang — reversible REPL. :help for commands, Ctrl-D to exit.")
 	for {
 		fmt.Print("> ")
 		if !in.Scan() {

@@ -1,4 +1,4 @@
-# mlang reversible cipher — encrypt and decrypt with the SAME operation.
+# kraMLang reversible cipher — encrypt and decrypt with the SAME operation.
 # XOR is its own inverse, so no separate "decrypt" code is needed, and no
 # information is ever lost.
 
