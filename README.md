@@ -73,12 +73,17 @@ Name a reversible block as a procedure, then run it either direction —
 `:undo` `:redo` `:history` `:env` — time travel and inspection
 `:load` `:step` — load a program and run it one mutation at a time
 `:invert CODE` — print a program's structural inverse
-`:circuit CODE` / `:verify CODE` — compile reversible code to gates, check it matches
+`:circuit CODE` — compile reversible code to a register-level netlist
+`:gates CODE` — compile to elementary X / CNOT / Toffoli gates (adds use a Cuccaro adder)
+`:verify CODE` — check the compiled circuit matches the interpreter
 `:reset` `:strict` `:help` — clear state, enforce reversibility, list commands
 
 Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 
 ## Status
 
-Early sketch. The circuit backend is register-level only, and `+=`/`-=` aren't
-bit-exact (`^=` is).
+Early sketch. `:circuit` is a register-level view; `:gates` decomposes to real
+elementary gates (X / CNOT / Toffoli, fixed 16-bit registers, arithmetic mod
+2^16). Control flow and procedures aren't lowered to circuits yet — inline the
+reversible body. `+=`/`-=` aren't bit-exact in the *interpreter* (`^=` is); the
+*gate* circuit is exact mod 2^16.

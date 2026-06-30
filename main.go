@@ -96,6 +96,26 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":gates") {
+			code := strings.TrimSpace(strings.TrimPrefix(line, ":gates"))
+			ast, err := Parse(code)
+			if err != nil {
+				fmt.Println("parse error:", err)
+				continue
+			}
+			bc, err := compileBits(ast)
+			if err != nil {
+				fmt.Println("cannot compile to gates:", err)
+				continue
+			}
+			fmt.Printf("elementary gates (%d-bit registers, %d wires):\n", bitWidth, bc.nwires)
+			for i, g := range bc.gates {
+				fmt.Printf("  %3d  %s\n", i+1, g)
+			}
+			fmt.Printf("%d gates (X/CNOT/Toffoli)\n", len(bc.gates))
+			continue
+		}
+
 		if strings.HasPrefix(line, ":circuit") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":circuit"))
 			ast, err := Parse(code)
@@ -258,7 +278,8 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(ip.OutputString())
 	case ":help":
 		fmt.Println(":invert CODE  print the structural inverse of a program")
-		fmt.Println(":circuit CODE compile reversible code to a gate netlist")
+		fmt.Println(":circuit CODE compile reversible code to a register-level netlist")
+		fmt.Println(":gates CODE   compile to elementary X/CNOT/Toffoli gates")
 		fmt.Println(":verify CODE  check the circuit matches the interpreter")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")

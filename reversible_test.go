@@ -14,10 +14,15 @@ import (
 func genProgram(rng *rand.Rand) (initSrc, progSrc string) {
 	vars := []string{"a", "b", "c"}
 	initSrc = fmt.Sprintf("a = %d; b = %d; c = %d", rng.Intn(50), rng.Intn(50), rng.Intn(50))
+	// pair returns a target index and a distinct operand index.
+	pair := func() (int, int) {
+		i := rng.Intn(3)
+		return i, (i + 1 + rng.Intn(2)) % 3
+	}
 	n := 3 + rng.Intn(6)
 	ops := make([]string, 0, n)
 	for k := 0; k < n; k++ {
-		switch rng.Intn(4) {
+		switch rng.Intn(6) {
 		case 0:
 			ops = append(ops, fmt.Sprintf("%s += %d", vars[rng.Intn(3)], rng.Intn(20)))
 		case 1:
@@ -25,9 +30,14 @@ func genProgram(rng *rand.Rand) (initSrc, progSrc string) {
 		case 2:
 			ops = append(ops, fmt.Sprintf("%s ^= %d", vars[rng.Intn(3)], rng.Intn(64)))
 		case 3:
-			i := rng.Intn(3)
-			j := (i + 1 + rng.Intn(2)) % 3 // distinct from i
+			i, j := pair()
 			ops = append(ops, fmt.Sprintf("%s <=> %s", vars[i], vars[j]))
+		case 4:
+			i, j := pair() // register += register
+			ops = append(ops, fmt.Sprintf("%s += %s", vars[i], vars[j]))
+		case 5:
+			i, j := pair() // register ^= register
+			ops = append(ops, fmt.Sprintf("%s ^= %s", vars[i], vars[j]))
 		}
 	}
 	return initSrc, strings.Join(ops, "; ")
@@ -100,6 +110,61 @@ func TestInterpreterMatchesCircuit(t *testing.T) {
 			if int64(iv.Num) != simReg[n] {
 				t.Fatalf("interp/circuit mismatch on %s: interp=%v circuit=%d\ninit: %s\nprog: %s",
 					n, iv.Num, simReg[n], initSrc, progSrc)
+			}
+		}
+	}
+}
+
+// TestBitCircuitMatchesInterpreter: the program decomposed to elementary
+// {X, CNOT, Toffoli} gates and simulated at the bit level must agree with the
+// interpreter (mod 2^bitWidth) — validates the gate decomposition, including
+// the Cuccaro adder.
+func TestBitCircuitMatchesInterpreter(t *testing.T) {
+	mask := func(v int64) int64 {
+		m := int64(1) << bitWidth
+		return ((v % m) + m) % m
+	}
+	rng := rand.New(rand.NewSource(4))
+	for i := 0; i < 500; i++ {
+		initSrc, progSrc := genProgram(rng)
+		ip := NewInterp()
+		mustRun(t, ip, initSrc)
+		initReg := registersFrom(ip)
+
+		progAst, err := Parse(progSrc)
+		if err != nil {
+			t.Fatalf("parse %q: %v", progSrc, err)
+		}
+		clone := ip.clone()
+		if _, err := Eval(progAst, clone); err != nil {
+			t.Fatalf("eval %q: %v", progSrc, err)
+		}
+
+		bc, err := compileBits(progAst)
+		if err != nil {
+			t.Fatalf("compileBits %q: %v", progSrc, err)
+		}
+		// load initial register values onto the wires
+		initBits := make([]bool, bc.nwires)
+		for name, base := range bc.base {
+			val := initReg[name]
+			for b := 0; b < bitWidth; b++ {
+				initBits[base+b] = (val>>uint(b))&1 == 1
+			}
+		}
+		out := simulateBits(bc.gates, bc.nwires, initBits)
+
+		for name, base := range bc.base {
+			var got int64
+			for b := 0; b < bitWidth; b++ {
+				if out[base+b] {
+					got |= 1 << uint(b)
+				}
+			}
+			want := mask(int64(clone.vars[name].val.Num))
+			if got != want {
+				t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d\ninit: %s\nprog: %s",
+					name, got, want, initSrc, progSrc)
 			}
 		}
 	}
