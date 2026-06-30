@@ -4,15 +4,18 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 func main() {
 	ip := NewInterp()
 
-	// Script mode: `kraM file.ml` runs a file quietly (only print output, no
-	// prompts or echoed results), then exits.
-	if len(os.Args) > 1 {
+	// Behaviour depends on how the binary was invoked: as `krapl` it always
+	// opens the REPL; as `kram file.kr` it runs a file quietly (only print
+	// output, no prompts), then exits; `kram` with no file opens the REPL too.
+	isREPL := strings.Contains(filepath.Base(os.Args[0]), "krapl")
+	if !isREPL && len(os.Args) > 1 {
 		runFile(os.Args[1], ip)
 		return
 	}

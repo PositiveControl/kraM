@@ -14,8 +14,12 @@ Dynamically typed, imperative, tree-walk interpreter. A research toy, early days
 ## Run
 
 ```sh
-go run .
+make build        # builds two binaries: kram and krapl
+./krapl           # open the REPL
+./kram fib.kr     # run a .kr script
 ```
+
+(Or without building: `go run . fib.kr`, and `go run .` for the REPL.)
 
 ```
 > x = 2 + 3 * 4
@@ -23,6 +27,9 @@ go run .
 > print "hello, " + "world"
 hello, world
 ```
+
+`krapl` opens the interactive REPL; `kram file.kr` runs a script quietly. They
+are the same binary, dispatched on the invoked name.
 
 ## The idea: reversibility
 
