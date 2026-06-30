@@ -48,6 +48,28 @@ func Eval(n Node, ip *Interp) (Value, error) {
 			return Eval(v.Else, ip)
 		}
 		return nilVal(), nil
+	case While:
+		// ponytail: hard iteration cap so a runaway loop can't fill the undo
+		// history unbounded. Raise it / make it configurable if real programs hit it.
+		const maxIter = 1_000_000
+		for i := 0; ; i++ {
+			cond, err := Eval(v.Cond, ip)
+			if err != nil {
+				return Value{}, err
+			}
+			if cond.Kind != BoolKind {
+				return Value{}, fmt.Errorf("while condition must be bool, got %s", cond.typeName())
+			}
+			if !cond.Bool {
+				return nilVal(), nil
+			}
+			if i >= maxIter {
+				return Value{}, fmt.Errorf("while exceeded %d iterations", maxIter)
+			}
+			if _, err := Eval(v.Body, ip); err != nil {
+				return Value{}, err
+			}
+		}
 	case Unary:
 		r, err := Eval(v.Right, ip)
 		if err != nil {

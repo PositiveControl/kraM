@@ -27,6 +27,7 @@ const (
 	PRINT
 	IF
 	ELSE
+	WHILE
 	LBRACE // {
 	RBRACE // }
 	SEMI   // ;
@@ -86,6 +87,8 @@ func kindName(k TokKind) string {
 		return "IF"
 	case ELSE:
 		return "ELSE"
+	case WHILE:
+		return "WHILE"
 	case LBRACE:
 		return "LBRACE"
 	case RBRACE:
@@ -182,6 +185,8 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{IF, word, start})
 			case "else":
 				toks = append(toks, Token{ELSE, word, start})
+			case "while":
+				toks = append(toks, Token{WHILE, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

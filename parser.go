@@ -22,6 +22,9 @@ type If struct {
 	Cond, Then Node
 	Else       Node // nil when there is no else
 }
+type While struct {
+	Cond, Body Node
+}
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -38,6 +41,7 @@ func (Assign) node()    {}
 func (Print) node()     {}
 func (Block) node()     {}
 func (If) node()        {}
+func (While) node()     {}
 func (Unary) node()     {}
 func (Binary) node()    {}
 
@@ -108,6 +112,11 @@ func (p *Parser) parseStmt() Node {
 		return Print{Value: p.parseExpr(0)}
 	case IF:
 		return p.parseIf()
+	case WHILE:
+		p.advance()
+		cond := p.parseExpr(0)
+		body := p.parseBlock()
+		return While{Cond: cond, Body: body}
 	case LBRACE:
 		return p.parseBlock()
 	}
