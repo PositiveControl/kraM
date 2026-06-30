@@ -116,6 +116,7 @@ type Interp struct {
 	notes    []string // informational messages (control-flow summaries)
 	cfDepth  int       // control-flow nesting; only depth-1 statements emit a note
 	strict   bool      // when true, destructive overwrite is an error, not a warning
+	last     Value     // last non-nil result; read by the bare identifier '_'
 }
 
 func NewInterp() *Interp {
@@ -190,6 +191,7 @@ func (ip *Interp) Reset() {
 	ip.fut = nil
 	ip.warnings = nil
 	ip.notes = nil
+	ip.last = Value{}
 }
 
 // incr applies a reversible `x += delta`. The caller guarantees name exists

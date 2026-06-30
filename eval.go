@@ -33,12 +33,18 @@ func Eval(n Node, ip *Interp) (Value, error) {
 	case StrLit:
 		return strVal(v.Val), nil
 	case Var:
+		if v.Name == "_" { // bare '_' is the last result (REPL convenience)
+			return ip.last, nil
+		}
 		val, ok := ip.get(v.Name)
 		if !ok {
 			return Value{}, fmt.Errorf("undefined variable %q", v.Name)
 		}
 		return val, nil
 	case Assign:
+		if v.Name == "_" {
+			return Value{}, fmt.Errorf("'_' is the last-result reference and cannot be assigned")
+		}
 		// First binding is reversible (undo just unsets it). Overwriting an
 		// existing value destroys information — the irreversible act — so warn
 		// and nudge toward the reversible updates (+= / -= / <=>).

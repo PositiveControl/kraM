@@ -10,8 +10,9 @@ import (
 func main() {
 	in := bufio.NewScanner(os.Stdin)
 	ip := NewInterp()
-	shown := 0     // output buffer entries already rendered to the terminal
+	shown := 0        // output buffer entries already rendered to the terminal
 	stepping := false // a :load'ed program is mid-flight, driven by :step
+	lastCmd := ""     // last code line, for '!!' substitution
 	fmt.Println("mlang — reversible REPL. :help for commands, Ctrl-D to exit.")
 	for {
 		fmt.Print("> ")
@@ -22,6 +23,19 @@ func main() {
 		line := strings.TrimSpace(in.Text())
 		if line == "" {
 			continue
+		}
+
+		// '!!' expands to the last code line (shell-style), so e.g.
+		// `reverse { !! }` runs the inverse of whatever you just typed.
+		// ponytail: blunt text replace — also expands a literal "!!" inside a
+		// string. Make it lexer-aware (skip string tokens) if that ever bites.
+		if strings.Contains(line, "!!") {
+			if lastCmd == "" {
+				fmt.Println("no previous command for !!")
+				continue
+			}
+			line = strings.ReplaceAll(line, "!!", lastCmd)
+			fmt.Println("»", line)
 		}
 
 		// While a stepped program is in flight, only stepping/inspection is
@@ -129,6 +143,7 @@ func main() {
 			continue
 		}
 
+		lastCmd = line // remember for '!!' (even if it errors, shell-style)
 		ast, err := Parse(line)
 		if err != nil {
 			fmt.Println("parse error:", err)
@@ -142,6 +157,7 @@ func main() {
 		reconcileOutput(ip, &shown)
 		printMessages(ip)
 		if val.Kind != NilKind {
+			ip.last = val    // '_' references this next line
 			fmt.Println(val) // echo real results; print/empty-if produce nil and stay quiet
 		}
 	}
