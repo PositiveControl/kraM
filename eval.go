@@ -1,6 +1,25 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
+
+// asInt requires a number with no fractional part, exactly representable as an
+// integer (float64 is exact for integers up to 2^53). Used by bitwise ^=.
+// ponytail: 2^53 ceiling — add a real int64 type if exact bits beyond that matter.
+func asInt(v Value, what string) (int64, error) {
+	if v.Kind != NumKind {
+		return 0, fmt.Errorf("%s must be an integer, got %s", what, v.typeName())
+	}
+	if v.Num != math.Trunc(v.Num) {
+		return 0, fmt.Errorf("%s must be a whole number, got %g", what, v.Num)
+	}
+	if math.Abs(v.Num) > 1<<53 {
+		return 0, fmt.Errorf("%s exceeds exact integer range (2^53)", what)
+	}
+	return int64(v.Num), nil
+}
 
 // Eval walks the AST and returns a Value. Types are checked here at runtime —
 // that runtime check IS what "dynamic typing" means. All state lives in the
@@ -60,6 +79,25 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		ip.incr(v.Name, delta)
 		return numVal(cur.Num + delta), nil
+	case XorAssign:
+		cur, ok := ip.get(v.Name)
+		if !ok {
+			return Value{}, fmt.Errorf("cannot update undefined variable %q", v.Name)
+		}
+		lhs, err := asInt(cur, fmt.Sprintf("variable %q", v.Name))
+		if err != nil {
+			return Value{}, err
+		}
+		rhs, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		mask, err := asInt(rhs, "^= operand")
+		if err != nil {
+			return Value{}, err
+		}
+		ip.xor(v.Name, mask)
+		return numVal(float64(lhs ^ mask)), nil
 	case Swap:
 		if _, ok := ip.get(v.A); !ok {
 			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.A)

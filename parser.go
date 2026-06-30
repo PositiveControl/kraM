@@ -29,6 +29,13 @@ type CompoundAssign struct {
 
 // Swap exchanges two variables: `a <=> b`. Self-inverse, no information lost.
 type Swap struct{ A, B string }
+
+// XorAssign is `name ^= value` — a self-inverse, exact reversible update on
+// integers. Maps to a CNOT-style gate.
+type XorAssign struct {
+	Name  string
+	Value Node
+}
 type Block struct{ Stmts []Node }
 type If struct {
 	Cond, Then Node
@@ -71,6 +78,7 @@ func (Assign) node()         {}
 func (Print) node()          {}
 func (CompoundAssign) node() {}
 func (Swap) node()           {}
+func (XorAssign) node()      {}
 func (Block) node()          {}
 func (If) node()             {}
 func (While) node()          {}
@@ -183,6 +191,10 @@ func (p *Parser) parseStmt() Node {
 				op = MINUS
 			}
 			return CompoundAssign{Name: name, Op: op, Value: p.parseExpr(0)}
+		case CARETEQ:
+			name := p.advance().Lit
+			p.advance() // '^='
+			return XorAssign{Name: name, Value: p.parseExpr(0)}
 		case SWAP:
 			a := p.advance().Lit
 			p.advance() // '<=>'

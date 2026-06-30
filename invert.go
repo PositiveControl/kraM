@@ -34,6 +34,9 @@ func invert(n Node) (Node, error) {
 	case Swap:
 		return v, nil // self-inverse
 
+	case XorAssign:
+		return v, nil // self-inverse: x ^= e twice restores x
+
 	case Assert:
 		return v, nil // self-inverse: the check is the same backward
 

@@ -60,6 +60,23 @@ func (e incrEdit) label() string {
 	return fmt.Sprintf("%s += %g", e.name, e.delta)
 }
 
+// xorEdit applies x ^= mask on the integer value of x. It is self-inverse
+// (XOR twice restores the original) and exact — like a CNOT gate. The cleanest
+// adiabatic mutation: no stored prior value, no delta to negate.
+type xorEdit struct {
+	name string
+	mask int64
+}
+
+func (e xorEdit) apply(ip *Interp) {
+	b := ip.vars[e.name]
+	b.val.Num = float64(int64(b.val.Num) ^ e.mask)
+	ip.vars[e.name] = b
+}
+func (e xorEdit) redo(ip *Interp) { e.apply(ip) }
+func (e xorEdit) undo(ip *Interp) { e.apply(ip) }
+func (e xorEdit) label() string   { return fmt.Sprintf("%s ^= %d", e.name, e.mask) }
+
 // swapEdit exchanges two variables. It is self-inverse — redo and undo are the
 // same operation — like a Fredkin/controlled-swap gate. Stores only the names.
 type swapEdit struct{ a, b string }
@@ -149,6 +166,11 @@ func (ip *Interp) incr(name string, delta float64) {
 // swap exchanges two existing variables reversibly.
 func (ip *Interp) swap(a, b string) {
 	ip.do(swapEdit{a: a, b: b})
+}
+
+// xor applies a reversible `x ^= mask`. Caller guarantees name holds an integer.
+func (ip *Interp) xor(name string, mask int64) {
+	ip.do(xorEdit{name: name, mask: mask})
 }
 
 // Undo reverses the most recent operation. Returns false if there is no history.

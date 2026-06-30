@@ -43,6 +43,7 @@ const (
 	FROM    // from (reversible loop entry)
 	LOOP    // loop (reversible loop step)
 	UNTIL   // until (reversible loop exit)
+	CARETEQ // ^= reversible XOR update (self-inverse, exact)
 )
 
 type Token struct {
@@ -125,6 +126,8 @@ func kindName(k TokKind) string {
 		return "LOOP"
 	case UNTIL:
 		return "UNTIL"
+	case CARETEQ:
+		return "CARETEQ"
 	default:
 		return "ILLEGAL"
 	}
@@ -201,6 +204,14 @@ func Lex(src string) []Token {
 				i += 2
 			} else {
 				toks = append(toks, Token{GT, ">", i})
+				i++
+			}
+		case c == '^':
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{CARETEQ, "^=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{ILLEGAL, "^", i})
 				i++
 			}
 		case c == '!':
