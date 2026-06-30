@@ -159,6 +159,13 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(ip.HistoryString())
 	case ":env":
 		fmt.Println(ip.EnvString())
+	case ":strict":
+		ip.strict = !ip.strict
+		if ip.strict {
+			fmt.Println("strict mode ON — destructive overwrite is now an error")
+		} else {
+			fmt.Println("strict mode OFF — destructive overwrite warns")
+		}
 	case ":output":
 		fmt.Println(ip.OutputString())
 	case ":help":
@@ -170,6 +177,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":history    show the timeline")
 		fmt.Println(":env        show current variables")
 		fmt.Println(":output     show the output buffer at the current time")
+		fmt.Println(":strict     toggle strict mode (overwrite = error)")
 		fmt.Println(":reset      clear all state and history")
 		fmt.Println(":help       this list")
 	default:
