@@ -192,6 +192,15 @@ func TestIfCircuitMatchesInterpreter(t *testing.T) {
 		{"a = 4; flag = 0", "if flag == 9 { a ^= 6 } assert flag == 9"},
 		// nested register add in the taken branch
 		{"a = 10; b = 20; flag = 7", "if flag == 7 { b -= a } else { } assert flag == 7"},
+		// comparison conditions, both outcomes
+		{"a = 0; x = 3", "if x < 5 { a += 1 } else { a += 2 } assert x < 5"},
+		{"a = 0; x = 9", "if x < 5 { a += 1 } else { a += 2 } assert x < 5"},
+		{"a = 0; x = 9", "if x > 5 { a += 1 } else { a += 2 } assert x > 5"},
+		{"a = 0; x = 3", "if x >= 3 { a += 1 } else { a += 2 } assert x >= 3"},
+		{"a = 0; x = 5", "if x <= 5 { a += 1 } else { a += 2 } assert x <= 5"},
+		{"a = 0; x = 5", "if x != 4 { a += 1 } else { a += 2 } assert x != 4"},
+		// constant on the left
+		{"a = 0; x = 2", "if 5 > x { a += 1 } else { a += 2 } assert 5 > x"},
 	}
 	for _, tc := range cases {
 		bitMatchesInterp(t, tc.init, tc.prog)

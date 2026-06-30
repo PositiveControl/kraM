@@ -240,7 +240,7 @@ func (c *bitCircuit) emitIf(v If) error {
 	if v.Exit == nil {
 		return fmt.Errorf("if must be reversible (add an 'assert' exit) to compile")
 	}
-	condVar, k, err := equalityCond(v.Cond)
+	condVar, op, k, err := comparisonCond(v.Cond)
 	if err != nil {
 		return err
 	}
@@ -254,7 +254,7 @@ func (c *bitCircuit) emitIf(v If) error {
 	x := c.reg(condVar)
 	q := c.alloc(1)[0]
 
-	c.equalityToBit(x, k, q) // q = (condVar == k)
+	c.compareToBit(x, op, k, q) // q = (condVar <op> k)
 
 	then, err := c.emitSub(v.Then)
 	if err != nil {
@@ -275,9 +275,72 @@ func (c *bitCircuit) emitIf(v If) error {
 		c.x(q)
 	}
 
-	c.equalityToBit(x, k, q) // uncompute q (the comparator is self-inverse)
+	c.compareToBit(x, op, k, q) // uncompute q (the comparator is self-inverse)
 	c.free(q)
 	return nil
+}
+
+// compareToBit sets q ^= (reg <op> k). Every case reduces to equality or the
+// >= comparator, with negation (X on q) for the complementary operators.
+// Applied twice it is the identity (each piece is self-inverse), so emitIf can
+// reuse it to uncompute the condition bit.
+func (c *bitCircuit) compareToBit(reg []int, op TokKind, k int64, q int) {
+	switch op {
+	case EQ:
+		c.equalityToBit(reg, k, q)
+	case NE:
+		c.equalityToBit(reg, k, q)
+		c.x(q)
+	case GE:
+		c.geToBit(reg, k, q)
+	case LT:
+		c.geToBit(reg, k, q)
+		c.x(q)
+	case GT: // x > k  <=>  x >= k+1
+		c.geToBit(reg, k+1, q)
+	case LE: // x <= k <=>  not (x >= k+1)
+		c.geToBit(reg, k+1, q)
+		c.x(q)
+	}
+}
+
+// geToBit sets q ^= (reg >= k) for unsigned k, leaving reg unchanged. It uses
+// compute-copy-uncompute: copy reg into scratch, add (2^w - k) to expose the
+// carry-out (= reg >= k), copy that bit into q, then run the whole computation
+// backward to clear all scratch.
+func (c *bitCircuit) geToBit(reg []int, k int64, q int) {
+	m := int64(1) << bitWidth
+	switch {
+	case k <= 0: // reg >= (<=0) always holds
+		c.x(q)
+		return
+	case k >= m: // reg >= (>=2^w) never holds
+		return
+	}
+	cst := m - k // two's complement of k, in [1, m-1]
+	s := c.alloc(bitWidth)
+	cr := c.alloc(bitWidth)
+	z := c.alloc(1)[0]
+	cout := c.alloc(1)[0]
+
+	var fwd []BitGate
+	for i := 0; i < bitWidth; i++ { // s = copy of reg
+		fwd = append(fwd, BitGate{BCNOT, reg[i], 0, s[i]})
+	}
+	for i := 0; i < bitWidth; i++ { // cr = constant (2^w - k)
+		if cst&(1<<uint(i)) != 0 {
+			fwd = append(fwd, BitGate{BX, 0, 0, cr[i]})
+		}
+	}
+	fwd = append(fwd, cuccaro(cr, s, z, cout)...) // s += cr, cout = (reg >= k)
+
+	c.gates = append(c.gates, fwd...)
+	c.cnot(cout, q)                                  // copy the comparison bit
+	c.gates = append(c.gates, inverseGates(fwd)...)  // uncompute all scratch
+
+	c.free(s...)
+	c.free(cr...)
+	c.free(z, cout)
 }
 
 // emitSub emits a node into a fresh gate slice, sharing the wire allocator and
@@ -352,23 +415,45 @@ func (c *bitCircuit) mcx(controls []int, t int) {
 	c.free(anc...) // ladder restored to zero
 }
 
-// equalityCond extracts (varName, constant) from a `var == const` condition.
-func equalityCond(n Node) (string, int64, error) {
+// comparisonCond extracts (varName, op, constant) from a `var <cmp> const`
+// condition (or `const <cmp> var`, flipping the operator).
+func comparisonCond(n Node) (string, TokKind, int64, error) {
+	bad := fmt.Errorf("circuit if-condition must compare a variable to a constant (== != < > <= >=)")
 	b, ok := n.(Binary)
-	if !ok || b.Op != EQ {
-		return "", 0, fmt.Errorf("circuit if-condition must be 'var == const'")
+	if !ok {
+		return "", 0, 0, bad
+	}
+	switch b.Op {
+	case EQ, NE, LT, GT, LE, GE:
+	default:
+		return "", 0, 0, bad
 	}
 	if v, ok := b.Left.(Var); ok {
 		if k, ok := b.Right.(NumberLit); ok {
-			return v.Name, int64(k.Val), nil
+			return v.Name, b.Op, int64(k.Val), nil
 		}
 	}
 	if v, ok := b.Right.(Var); ok {
 		if k, ok := b.Left.(NumberLit); ok {
-			return v.Name, int64(k.Val), nil
+			return v.Name, flipCmp(b.Op), int64(k.Val), nil // const <op> var  ==  var <flip> const
 		}
 	}
-	return "", 0, fmt.Errorf("circuit if-condition must be 'var == const'")
+	return "", 0, 0, bad
+}
+
+// flipCmp swaps the sense of a comparison when operands are reversed.
+func flipCmp(op TokKind) TokKind {
+	switch op {
+	case LT:
+		return GT
+	case GT:
+		return LT
+	case LE:
+		return GE
+	case GE:
+		return LE
+	}
+	return op // EQ, NE are symmetric
 }
 
 // collectWrites records variables a node assigns to (targets and swap operands).
@@ -393,14 +478,12 @@ func collectWrites(n Node, w map[string]bool) {
 	}
 }
 
-// adderGates returns a Cuccaro in-place ripple-carry adder: target += addend
-// (mod 2^bitWidth). The addend register is restored; one ancilla carry bit is
-// used and returned to zero. Gates are returned (not appended) so subtraction
-// can reuse them reversed.
-func (c *bitCircuit) adderGates(addend, target []int) []BitGate {
-	z := c.alloc(1)[0] // carry-in ancilla, starts 0
-	g := &bitCircuit{nwires: c.nwires}
-
+// cuccaro builds an in-place ripple-carry adder: target += addend
+// (mod 2^bitWidth). z is the carry-in ancilla (must be 0); addend and z are
+// restored. If cout >= 0 the carry-out is XORed into it (full, non-modular);
+// cout < 0 drops it (modular). Pure gate construction — no allocation.
+func cuccaro(addend, target []int, z, cout int) []BitGate {
+	g := &bitCircuit{}
 	maj := func(ci, bi, ai int) { g.cnot(ai, bi); g.cnot(ai, ci); g.toff(ci, bi, ai) }
 	uma := func(ci, bi, ai int) { g.toff(ci, bi, ai); g.cnot(ai, ci); g.cnot(ci, bi) }
 
@@ -409,15 +492,22 @@ func (c *bitCircuit) adderGates(addend, target []int) []BitGate {
 	for i := 1; i < n; i++ {
 		maj(addend[i-1], target[i], addend[i])
 	}
-	// modular: drop the carry-out CNOT (no overflow wire)
+	if cout >= 0 {
+		g.cnot(addend[n-1], cout) // carry-out
+	}
 	for i := n - 1; i >= 1; i-- {
 		uma(addend[i-1], target[i], addend[i])
 	}
 	uma(z, target[0], addend[0])
-
-	c.nwires = g.nwires
-	c.free(z) // the carry ancilla is restored to zero by the adder
 	return g.gates
+}
+
+// adderGates: modular target += addend, allocating and freeing the carry-in.
+func (c *bitCircuit) adderGates(addend, target []int) []BitGate {
+	z := c.alloc(1)[0]
+	gs := cuccaro(addend, target, z, -1)
+	c.free(z) // restored to zero by the adder
+	return gs
 }
 
 func inverseGates(gs []BitGate) []BitGate {

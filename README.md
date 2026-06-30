@@ -84,8 +84,9 @@ Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 
 Early sketch. `:circuit` is a register-level view; `:gates` decomposes to real
 elementary gates (X / CNOT / Toffoli, fixed 16-bit registers, arithmetic mod
-2^16). `:gates` lowers procedures (inlined) and reversible `if`s with
-`var == const` conditions (controlled gates); loops can't become a fixed circuit
-and are rejected. Ancilla wires are recycled, so a circuit's width is bounded by
+2^16). `:gates` lowers procedures (inlined) and reversible `if`s with `var <cmp> const`
+conditions — `== != < > <= >=`, via an equality check or a subtract-based
+comparator — to controlled gates; loops can't become a fixed circuit and are
+rejected. Ancilla wires are recycled, so a circuit's width is bounded by
 peak concurrent scratch, not program length. `+=`/`-=` aren't bit-exact in the
 *interpreter* (`^=` is); the *gate* circuit is exact mod 2^16.
