@@ -6,7 +6,8 @@ import "strconv"
 type ValueKind int
 
 const (
-	NumKind ValueKind = iota
+	NilKind ValueKind = iota // zero value of Value is nil — handy
+	NumKind
 	BoolKind
 )
 
@@ -20,9 +21,12 @@ type Value struct {
 
 func numVal(f float64) Value { return Value{Kind: NumKind, Num: f} }
 func boolVal(b bool) Value   { return Value{Kind: BoolKind, Bool: b} }
+func nilVal() Value          { return Value{Kind: NilKind} }
 
 func (v Value) typeName() string {
 	switch v.Kind {
+	case NilKind:
+		return "nil"
 	case NumKind:
 		return "number"
 	case BoolKind:
@@ -33,6 +37,8 @@ func (v Value) typeName() string {
 
 func (v Value) String() string {
 	switch v.Kind {
+	case NilKind:
+		return "nil"
 	case NumKind:
 		return strconv.FormatFloat(v.Num, 'g', -1, 64)
 	case BoolKind:

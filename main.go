@@ -38,8 +38,8 @@ func main() {
 			continue
 		}
 		reconcileOutput(ip, &shown)
-		if _, isPrint := ast.(Print); !isPrint {
-			fmt.Println(val) // echo expression results; print already rendered its own
+		if val.Kind != NilKind {
+			fmt.Println(val) // echo real results; print/empty-if produce nil and stay quiet
 		}
 	}
 }

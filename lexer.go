@@ -25,6 +25,11 @@ const (
 	EQ // ==
 	NE // !=
 	PRINT
+	IF
+	ELSE
+	LBRACE // {
+	RBRACE // }
+	SEMI   // ;
 )
 
 type Token struct {
@@ -77,6 +82,16 @@ func kindName(k TokKind) string {
 		return "NE"
 	case PRINT:
 		return "PRINT"
+	case IF:
+		return "IF"
+	case ELSE:
+		return "ELSE"
+	case LBRACE:
+		return "LBRACE"
+	case RBRACE:
+		return "RBRACE"
+	case SEMI:
+		return "SEMI"
 	default:
 		return "ILLEGAL"
 	}
@@ -108,6 +123,15 @@ func Lex(src string) []Token {
 			i++
 		case c == ')':
 			toks = append(toks, Token{RPAREN, ")", i})
+			i++
+		case c == '{':
+			toks = append(toks, Token{LBRACE, "{", i})
+			i++
+		case c == '}':
+			toks = append(toks, Token{RBRACE, "}", i})
+			i++
+		case c == ';':
+			toks = append(toks, Token{SEMI, ";", i})
 			i++
 		case c == '=':
 			if peek(src, i+1) == '=' {
@@ -154,6 +178,10 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{FALSE, word, start})
 			case "print":
 				toks = append(toks, Token{PRINT, word, start})
+			case "if":
+				toks = append(toks, Token{IF, word, start})
+			case "else":
+				toks = append(toks, Token{ELSE, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

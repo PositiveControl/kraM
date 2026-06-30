@@ -17,6 +17,11 @@ type Assign struct {
 	Value Node
 }
 type Print struct{ Value Node }
+type Block struct{ Stmts []Node }
+type If struct {
+	Cond, Then Node
+	Else       Node // nil when there is no else
+}
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -31,6 +36,8 @@ func (BoolLit) node()   {}
 func (Var) node()       {}
 func (Assign) node()    {}
 func (Print) node()     {}
+func (Block) node()     {}
+func (If) node()        {}
 func (Unary) node()     {}
 func (Binary) node()    {}
 
@@ -59,7 +66,7 @@ type Parser struct {
 
 func Parse(src string) (Node, error) {
 	p := &Parser{toks: Lex(src)}
-	n := p.parseStmt()
+	n := p.parseProgram()
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -69,11 +76,40 @@ func Parse(src string) (Node, error) {
 	return n, nil
 }
 
-// parseStmt: `print expr`, `ident = expr` (assignment), or a bare expression.
+// parseProgram parses a top-level ';'-separated statement list. A lone
+// statement is returned bare; multiples wrap in a Block.
+func (p *Parser) parseProgram() Node {
+	stmts := p.parseStmtList(EOF)
+	if len(stmts) == 1 {
+		return stmts[0]
+	}
+	return Block{Stmts: stmts}
+}
+
+// parseStmtList reads statements separated by ';' up to `end` (RBRACE or EOF).
+// Stray/trailing ';' are tolerated.
+func (p *Parser) parseStmtList(end TokKind) []Node {
+	var stmts []Node
+	for p.err == nil && p.cur().Kind != end && p.cur().Kind != EOF {
+		if p.cur().Kind == SEMI {
+			p.advance()
+			continue
+		}
+		stmts = append(stmts, p.parseStmt())
+	}
+	return stmts
+}
+
+// parseStmt: print / if / block / assignment / bare expression.
 func (p *Parser) parseStmt() Node {
-	if p.cur().Kind == PRINT {
+	switch p.cur().Kind {
+	case PRINT:
 		p.advance()
 		return Print{Value: p.parseExpr(0)}
+	case IF:
+		return p.parseIf()
+	case LBRACE:
+		return p.parseBlock()
 	}
 	if p.cur().Kind == IDENT && p.toks[p.pos+1].Kind == ASSIGN {
 		name := p.advance().Lit
@@ -81,6 +117,38 @@ func (p *Parser) parseStmt() Node {
 		return Assign{Name: name, Value: p.parseExpr(0)}
 	}
 	return p.parseExpr(0)
+}
+
+func (p *Parser) parseBlock() Node {
+	if p.cur().Kind != LBRACE {
+		p.fail("expected '{', got %s", p.cur())
+		return nil
+	}
+	p.advance()
+	stmts := p.parseStmtList(RBRACE)
+	if p.cur().Kind != RBRACE {
+		p.fail("expected '}', got %s", p.cur())
+		return nil
+	}
+	p.advance()
+	return Block{Stmts: stmts}
+}
+
+// parseIf: `if cond { ... }` with optional `else { ... }` or `else if ...`.
+func (p *Parser) parseIf() Node {
+	p.advance() // 'if'
+	cond := p.parseExpr(0)
+	then := p.parseBlock()
+	var els Node
+	if p.cur().Kind == ELSE {
+		p.advance()
+		if p.cur().Kind == IF {
+			els = p.parseIf() // else-if chain
+		} else {
+			els = p.parseBlock()
+		}
+	}
+	return If{Cond: cond, Then: then, Else: els}
 }
 
 func (p *Parser) cur() Token { return p.toks[p.pos] }

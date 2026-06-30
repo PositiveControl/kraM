@@ -30,7 +30,24 @@ func Eval(n Node, ip *Interp) (Value, error) {
 			return Value{}, err
 		}
 		ip.print(val) // output is reversible state, not a raw side effect
-		return val, nil
+		return nilVal(), nil
+	case Block:
+		return evalBlock(v, ip)
+	case If:
+		cond, err := Eval(v.Cond, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		if cond.Kind != BoolKind {
+			return Value{}, fmt.Errorf("if condition must be bool, got %s", cond.typeName())
+		}
+		if cond.Bool {
+			return Eval(v.Then, ip)
+		}
+		if v.Else != nil {
+			return Eval(v.Else, ip)
+		}
+		return nilVal(), nil
 	case Unary:
 		r, err := Eval(v.Right, ip)
 		if err != nil {
@@ -44,6 +61,19 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		return evalBinary(v, ip)
 	}
 	return Value{}, fmt.Errorf("cannot evaluate %T", n)
+}
+
+// evalBlock runs statements in order and yields the last value (nil if empty).
+func evalBlock(b Block, ip *Interp) (Value, error) {
+	last := nilVal()
+	for _, s := range b.Stmts {
+		v, err := Eval(s, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		last = v
+	}
+	return last, nil
 }
 
 func evalBinary(b Binary, ip *Interp) (Value, error) {
