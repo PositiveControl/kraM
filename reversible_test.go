@@ -115,58 +115,86 @@ func TestInterpreterMatchesCircuit(t *testing.T) {
 	}
 }
 
-// TestBitCircuitMatchesInterpreter: the program decomposed to elementary
-// {X, CNOT, Toffoli} gates and simulated at the bit level must agree with the
-// interpreter (mod 2^bitWidth) — validates the gate decomposition, including
-// the Cuccaro adder.
-func TestBitCircuitMatchesInterpreter(t *testing.T) {
-	mask := func(v int64) int64 {
-		m := int64(1) << bitWidth
-		return ((v % m) + m) % m
+func maskW(v int64) int64 {
+	m := int64(1) << bitWidth
+	return ((v % m) + m) % m
+}
+
+// bitMatchesInterp compiles progSrc to elementary gates, simulates it from the
+// state produced by initSrc, and asserts every register agrees with the
+// interpreter (mod 2^bitWidth).
+func bitMatchesInterp(t *testing.T, initSrc, progSrc string) {
+	t.Helper()
+	ip := NewInterp()
+	mustRun(t, ip, initSrc)
+	initReg := registersFrom(ip)
+
+	progAst, err := Parse(progSrc)
+	if err != nil {
+		t.Fatalf("parse %q: %v", progSrc, err)
 	}
+	clone := ip.clone()
+	if _, err := Eval(progAst, clone); err != nil {
+		t.Fatalf("eval %q: %v", progSrc, err)
+	}
+
+	bc, err := compileBits(progAst, ip.procs)
+	if err != nil {
+		t.Fatalf("compileBits %q: %v", progSrc, err)
+	}
+	initBits := make([]bool, bc.nwires)
+	for name, base := range bc.base {
+		val := initReg[name]
+		for b := 0; b < bitWidth; b++ {
+			initBits[base+b] = (val>>uint(b))&1 == 1
+		}
+	}
+	out := simulateBits(bc.gates, bc.nwires, initBits)
+
+	for name, base := range bc.base {
+		var got int64
+		for b := 0; b < bitWidth; b++ {
+			if out[base+b] {
+				got |= 1 << uint(b)
+			}
+		}
+		if want := maskW(int64(clone.vars[name].val.Num)); got != want {
+			t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d\ninit: %s\nprog: %s",
+				name, got, want, initSrc, progSrc)
+		}
+	}
+}
+
+// TestBitCircuitMatchesInterpreter: straight-line programs decomposed to
+// {X, CNOT, Toffoli} and bit-simulated must agree with the interpreter —
+// validates the gate decomposition, including the Cuccaro adder.
+func TestBitCircuitMatchesInterpreter(t *testing.T) {
 	rng := rand.New(rand.NewSource(4))
 	for i := 0; i < 500; i++ {
 		initSrc, progSrc := genProgram(rng)
-		ip := NewInterp()
-		mustRun(t, ip, initSrc)
-		initReg := registersFrom(ip)
+		bitMatchesInterp(t, initSrc, progSrc)
+	}
+}
 
-		progAst, err := Parse(progSrc)
-		if err != nil {
-			t.Fatalf("parse %q: %v", progSrc, err)
-		}
-		clone := ip.clone()
-		if _, err := Eval(progAst, clone); err != nil {
-			t.Fatalf("eval %q: %v", progSrc, err)
-		}
-
-		bc, err := compileBits(progAst, nil)
-		if err != nil {
-			t.Fatalf("compileBits %q: %v", progSrc, err)
-		}
-		// load initial register values onto the wires
-		initBits := make([]bool, bc.nwires)
-		for name, base := range bc.base {
-			val := initReg[name]
-			for b := 0; b < bitWidth; b++ {
-				initBits[base+b] = (val>>uint(b))&1 == 1
-			}
-		}
-		out := simulateBits(bc.gates, bc.nwires, initBits)
-
-		for name, base := range bc.base {
-			var got int64
-			for b := 0; b < bitWidth; b++ {
-				if out[base+b] {
-					got |= 1 << uint(b)
-				}
-			}
-			want := mask(int64(clone.vars[name].val.Num))
-			if got != want {
-				t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d\ninit: %s\nprog: %s",
-					name, got, want, initSrc, progSrc)
-			}
-		}
+// TestIfCircuitMatchesInterpreter: reversible if lowered to controlled gates
+// must match the interpreter for both the taken and untaken branch. The exit
+// assertion repeats the entry condition, so it always holds.
+func TestIfCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		// condition true -> then branch
+		{"a = 0; flag = 5", "if flag == 5 { a += 7 } else { a += 1 } assert flag == 5"},
+		// condition false -> else branch
+		{"a = 0; flag = 3", "if flag == 5 { a += 7 } else { a += 1 } assert flag == 5"},
+		// branch with multiple ops
+		{"a = 2; b = 3; flag = 1", "if flag == 1 { a += b; a <=> b } else { } assert flag == 1"},
+		// then-only (no else)
+		{"a = 4; flag = 9", "if flag == 9 { a ^= 6 } assert flag == 9"},
+		{"a = 4; flag = 0", "if flag == 9 { a ^= 6 } assert flag == 9"},
+		// nested register add in the taken branch
+		{"a = 10; b = 20; flag = 7", "if flag == 7 { b -= a } else { } assert flag == 7"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
 	}
 }
 

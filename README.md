@@ -84,6 +84,7 @@ Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 
 Early sketch. `:circuit` is a register-level view; `:gates` decomposes to real
 elementary gates (X / CNOT / Toffoli, fixed 16-bit registers, arithmetic mod
-2^16). Control flow and procedures aren't lowered to circuits yet — inline the
-reversible body. `+=`/`-=` aren't bit-exact in the *interpreter* (`^=` is); the
+2^16). `:gates` lowers procedures (inlined) and reversible `if`s with
+`var == const` conditions (controlled gates); loops can't become a fixed circuit
+and are rejected. `+=`/`-=` aren't bit-exact in the *interpreter* (`^=` is); the
 *gate* circuit is exact mod 2^16.

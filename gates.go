@@ -142,6 +142,8 @@ func (c *bitCircuit) emit(n Node) error {
 			return fmt.Errorf("cannot uncall %q: %w", v.Name, err)
 		}
 		return c.emit(inv)
+	case If:
+		return c.emitIf(v)
 	case While, ReversibleLoop:
 		return fmt.Errorf("loops have data-dependent bounds — not a fixed circuit; unroll to straight-line code")
 	}
@@ -209,6 +211,158 @@ func (c *bitCircuit) emitAdd(v CompoundAssign) error {
 		cleanup()
 	}
 	return nil
+}
+
+// emitIf lowers a reversible if to controlled gates: compute the condition into
+// an ancilla bit, apply each branch gate controlled on it, then uncompute the
+// bit. Only `var == const` conditions are supported (an equality comparator);
+// the branch must not modify the condition variable, and an exit assertion is
+// required (the if must be reversible).
+func (c *bitCircuit) emitIf(v If) error {
+	if v.Exit == nil {
+		return fmt.Errorf("if must be reversible (add an 'assert' exit) to compile")
+	}
+	condVar, k, err := equalityCond(v.Cond)
+	if err != nil {
+		return err
+	}
+	written := map[string]bool{}
+	collectWrites(v.Then, written)
+	collectWrites(v.Else, written)
+	if written[condVar] {
+		return fmt.Errorf("branch modifies the condition variable %q — not lowerable to a fixed control", condVar)
+	}
+
+	x := c.reg(condVar)
+	q := c.alloc(1)[0]
+
+	c.equalityToBit(x, k, q) // q = (condVar == k)
+
+	then, err := c.emitSub(v.Then)
+	if err != nil {
+		return err
+	}
+	for _, g := range then {
+		c.appendControlled(q, g)
+	}
+	if v.Else != nil {
+		c.x(q) // else runs when condition is false
+		els, err := c.emitSub(v.Else)
+		if err != nil {
+			return err
+		}
+		for _, g := range els {
+			c.appendControlled(q, g)
+		}
+		c.x(q)
+	}
+
+	c.equalityToBit(x, k, q) // uncompute q (the comparator is self-inverse)
+	return nil
+}
+
+// emitSub emits a node into a fresh gate slice, sharing the wire allocator and
+// layout, and returns the produced gates.
+func (c *bitCircuit) emitSub(n Node) ([]BitGate, error) {
+	saved := c.gates
+	c.gates = nil
+	err := c.emit(n)
+	sub := c.gates
+	c.gates = saved
+	return sub, err
+}
+
+// appendControlled adds one control wire q to a gate: X->CNOT, CNOT->Toffoli,
+// Toffoli->C^3X (decomposed via one clean ancilla).
+func (c *bitCircuit) appendControlled(q int, g BitGate) {
+	switch g.Op {
+	case BX:
+		c.cnot(q, g.T)
+	case BCNOT:
+		c.toff(q, g.A, g.T)
+	case BTOFF:
+		anc := c.alloc(1)[0]
+		c.toff(q, g.A, anc)
+		c.toff(anc, g.B, g.T)
+		c.toff(q, g.A, anc) // restore anc to 0
+	}
+}
+
+// equalityToBit sets q ^= (reg == k). Self-inverse, restores reg. Flip the bits
+// where k is 0 so reg is all-ones exactly when reg==k, AND them into q with a
+// multi-controlled NOT, then unflip.
+func (c *bitCircuit) equalityToBit(reg []int, k int64, q int) {
+	flip := func() {
+		for i := 0; i < bitWidth; i++ {
+			if k&(1<<uint(i)) == 0 {
+				c.x(reg[i])
+			}
+		}
+	}
+	flip()
+	c.mcx(reg, q)
+	flip()
+}
+
+// mcx applies a multi-controlled NOT: t ^= AND(controls). Uses a clean ancilla
+// ladder that is fully uncomputed.
+func (c *bitCircuit) mcx(controls []int, t int) {
+	n := len(controls)
+	if n == 1 {
+		c.cnot(controls[0], t)
+		return
+	}
+	anc := c.alloc(n - 1)
+	c.toff(controls[0], controls[1], anc[0])
+	for i := 2; i < n; i++ {
+		c.toff(controls[i], anc[i-2], anc[i-1])
+	}
+	c.cnot(anc[n-2], t)
+	for i := n - 1; i >= 2; i-- { // uncompute the ladder
+		c.toff(controls[i], anc[i-2], anc[i-1])
+	}
+	c.toff(controls[0], controls[1], anc[0])
+}
+
+// equalityCond extracts (varName, constant) from a `var == const` condition.
+func equalityCond(n Node) (string, int64, error) {
+	b, ok := n.(Binary)
+	if !ok || b.Op != EQ {
+		return "", 0, fmt.Errorf("circuit if-condition must be 'var == const'")
+	}
+	if v, ok := b.Left.(Var); ok {
+		if k, ok := b.Right.(NumberLit); ok {
+			return v.Name, int64(k.Val), nil
+		}
+	}
+	if v, ok := b.Right.(Var); ok {
+		if k, ok := b.Left.(NumberLit); ok {
+			return v.Name, int64(k.Val), nil
+		}
+	}
+	return "", 0, fmt.Errorf("circuit if-condition must be 'var == const'")
+}
+
+// collectWrites records variables a node assigns to (targets and swap operands).
+func collectWrites(n Node, w map[string]bool) {
+	switch v := n.(type) {
+	case nil:
+		return
+	case Block:
+		for _, s := range v.Stmts {
+			collectWrites(s, w)
+		}
+	case XorAssign:
+		w[v.Name] = true
+	case CompoundAssign:
+		w[v.Name] = true
+	case Swap:
+		w[v.A] = true
+		w[v.B] = true
+	case If:
+		collectWrites(v.Then, w)
+		collectWrites(v.Else, w)
+	}
 }
 
 // adderGates returns a Cuccaro in-place ripple-carry adder: target += addend
