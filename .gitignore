@@ -1,0 +1,7 @@
+# Binaries
+/mlang
+*.exe
+
+# Go
+*.test
+*.out
