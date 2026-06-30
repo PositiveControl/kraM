@@ -131,6 +131,17 @@ func (ip *Interp) do(r reversible) {
 	ip.fut = nil
 }
 
+// clone makes a fresh interpreter with a copy of the current variables (no
+// shared history). Used to run a program speculatively, e.g. for :verify.
+func (ip *Interp) clone() *Interp {
+	c := NewInterp()
+	for k, v := range ip.vars {
+		c.vars[k] = v
+	}
+	c.strict = ip.strict
+	return c
+}
+
 func (ip *Interp) get(name string) (Value, bool) {
 	b, ok := ip.vars[name]
 	if !ok || !b.exists {

@@ -58,6 +58,22 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":verify") {
+			code := strings.TrimSpace(strings.TrimPrefix(line, ":verify"))
+			ast, err := Parse(code)
+			if err != nil {
+				fmt.Println("parse error:", err)
+				continue
+			}
+			report, err := verify(ast, ip)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println(report)
+			continue
+		}
+
 		if strings.HasPrefix(line, ":circuit") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":circuit"))
 			ast, err := Parse(code)
@@ -191,6 +207,7 @@ func runMeta(line string, ip *Interp) {
 	case ":help":
 		fmt.Println(":invert CODE  print the structural inverse of a program")
 		fmt.Println(":circuit CODE compile reversible code to a gate netlist")
+		fmt.Println(":verify CODE  check the circuit matches the interpreter")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")
