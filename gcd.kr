@@ -1,4 +1,5 @@
 # kraMLang reversible GCD (Euclid by subtraction).   Run:  ./kram gcd.kr
+# Docs: docs/demos.md
 #
 # GCD is irreversible on its own: many (a, b) pairs share the same gcd, so the
 # inputs can't be recovered from the result. We make it reversible by RECORDING

@@ -1,4 +1,5 @@
 # kraMLang reversible Fibonacci.   Run:  make build && ./kram fib.kr
+# Docs: docs/demos.md
 #
 # fibstep is a reusable, parameterized reversible operation: (x, y) -> (y, x+y).
 # The loop applies it n times to compute Fibonacci numbers with only reversible

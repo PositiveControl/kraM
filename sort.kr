@@ -1,4 +1,5 @@
 # kraMLang reversible sort.   Run:  ./kram sort.kr
+# Docs: docs/demos.md
 #
 # Sorting is NOT reversible on its own: many inputs map to the same sorted
 # output, so the original order can't be recovered from the result alone. We
