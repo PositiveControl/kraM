@@ -14,6 +14,8 @@ const (
 	SLASH
 	LPAREN
 	RPAREN
+	IDENT
+	ASSIGN
 )
 
 type Token struct {
@@ -44,6 +46,10 @@ func kindName(k TokKind) string {
 		return "LPAREN"
 	case RPAREN:
 		return "RPAREN"
+	case IDENT:
+		return "IDENT"
+	case ASSIGN:
+		return "ASSIGN"
 	default:
 		return "ILLEGAL"
 	}
@@ -76,6 +82,15 @@ func Lex(src string) []Token {
 		case c == ')':
 			toks = append(toks, Token{RPAREN, ")", i})
 			i++
+		case c == '=':
+			toks = append(toks, Token{ASSIGN, "=", i})
+			i++
+		case isAlpha(c):
+			start := i
+			for i < len(src) && (isAlpha(src[i]) || isDigit(src[i])) {
+				i++
+			}
+			toks = append(toks, Token{IDENT, src[start:i], start})
 		case isDigit(c) || c == '.':
 			start := i
 			for i < len(src) && (isDigit(src[i]) || src[i] == '.') {
@@ -93,3 +108,6 @@ func Lex(src string) []Token {
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+func isAlpha(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}

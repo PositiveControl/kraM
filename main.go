@@ -10,6 +10,7 @@ import (
 
 func main() {
 	in := bufio.NewScanner(os.Stdin)
+	env := Env{}
 	fmt.Println("mlang v0 — arithmetic REPL. Ctrl-D to exit.")
 	for {
 		fmt.Print("> ")
@@ -26,7 +27,7 @@ func main() {
 			fmt.Println("parse error:", err)
 			continue
 		}
-		val, err := Eval(ast)
+		val, err := Eval(ast, env)
 		if err != nil {
 			fmt.Println("error:", err)
 			continue

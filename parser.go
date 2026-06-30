@@ -10,6 +10,11 @@ import (
 type Node interface{ node() }
 
 type NumberLit struct{ Val float64 }
+type Var struct{ Name string }
+type Assign struct {
+	Name  string
+	Value Node
+}
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -20,6 +25,8 @@ type Binary struct {
 }
 
 func (NumberLit) node() {}
+func (Var) node()       {}
+func (Assign) node()    {}
 func (Unary) node()     {}
 func (Binary) node()    {}
 
@@ -42,7 +49,7 @@ type Parser struct {
 
 func Parse(src string) (Node, error) {
 	p := &Parser{toks: Lex(src)}
-	n := p.parseExpr(0)
+	n := p.parseStmt()
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -50,6 +57,16 @@ func Parse(src string) (Node, error) {
 		return nil, fmt.Errorf("unexpected %s", p.cur())
 	}
 	return n, nil
+}
+
+// parseStmt: `ident = expr` is assignment; anything else is a bare expression.
+func (p *Parser) parseStmt() Node {
+	if p.cur().Kind == IDENT && p.toks[p.pos+1].Kind == ASSIGN {
+		name := p.advance().Lit
+		p.advance() // '='
+		return Assign{Name: name, Value: p.parseExpr(0)}
+	}
+	return p.parseExpr(0)
 }
 
 func (p *Parser) cur() Token { return p.toks[p.pos] }
@@ -88,6 +105,8 @@ func (p *Parser) parsePrefix() Node {
 			return nil
 		}
 		return NumberLit{Val: v}
+	case IDENT:
+		return Var{Name: t.Lit}
 	case MINUS:
 		return Unary{Op: MINUS, Right: p.parseExpr(30)} // unary binds tighter than * /
 	case LPAREN:
