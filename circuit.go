@@ -148,10 +148,10 @@ func simulate(gates []Gate, reg map[string]int64) (map[string]int64, error) {
 }
 
 // verify runs CODE both ways from the current variables: the tree-walk
-// interpreter (on a clone) and the simulated gate netlist. It reports whether
-// they agree, register by register.
+// interpreter (on a clone) and the simulated elementary-gate circuit. It
+// reports whether they agree, register by register (mod 2^bitWidth).
 func verify(ast Node, ip *Interp) (string, error) {
-	gates, err := lower(ast)
+	bc, err := compileBits(ast, ip)
 	if err != nil {
 		return "", fmt.Errorf("not compilable to a circuit: %w", err)
 	}
@@ -159,40 +159,52 @@ func verify(ast Node, ip *Interp) (string, error) {
 
 	clone := ip.clone()
 	_, ierr := Eval(ast, clone)
-	simReg, serr := simulate(gates, initReg)
+
+	initBits := make([]bool, bc.nwires)
+	for name, base := range bc.base {
+		v := initReg[name]
+		for b := 0; b < bitWidth; b++ {
+			initBits[base+b] = (v>>uint(b))&1 == 1
+		}
+	}
+	out := simulateBits(bc.gates, bc.nwires, initBits)
 
 	var b strings.Builder
-	if ierr != nil || serr != nil {
-		fmt.Fprintf(&b, "interpreter: %s\ncircuit:     %s", errOrOK(ierr), errOrOK(serr))
-		if (ierr == nil) != (serr == nil) {
-			b.WriteString("\nMISMATCH — one path errored, the other did not")
-		} else {
-			b.WriteString("\n(both paths errored)")
-		}
+	if ierr != nil {
+		fmt.Fprintf(&b, "interpreter errored: %v\n(circuit has %d gates)", ierr, len(bc.gates))
 		return b.String(), nil
 	}
 
-	names := make([]string, 0, len(initReg))
-	for k := range initReg {
+	m := int64(1) << bitWidth
+	mask := func(v int64) int64 { return ((v % m) + m) % m }
+	names := make([]string, 0, len(bc.base))
+	for k := range bc.base {
 		names = append(names, k)
 	}
 	sort.Strings(names)
 
 	match := true
 	for _, n := range names {
+		var got int64
+		base := bc.base[n]
+		for bit := 0; bit < bitWidth; bit++ {
+			if out[base+bit] {
+				got |= 1 << uint(bit)
+			}
+		}
 		iv := clone.vars[n].val
-		sv := simReg[n]
+		want := mask(int64(iv.Num))
 		mark := "ok"
-		if iv.Kind != NumKind || iv.Num != float64(int64(iv.Num)) || int64(iv.Num) != sv {
+		if iv.Kind != NumKind || want != got {
 			mark = "MISMATCH"
 			match = false
 		}
-		fmt.Fprintf(&b, "  %s: interp=%s circuit=%d  %s\n", n, iv, sv, mark)
+		fmt.Fprintf(&b, "  %s: interp=%s circuit=%d  %s\n", n, iv, got, mark)
 	}
 	if match {
-		b.WriteString("MATCH — circuit agrees with interpreter")
+		b.WriteString("MATCH — gate circuit agrees with interpreter")
 	} else {
-		b.WriteString("MISMATCH — circuit disagrees with interpreter")
+		b.WriteString("MISMATCH — gate circuit disagrees with interpreter")
 	}
 	return b.String(), nil
 }
@@ -229,13 +241,6 @@ func regInterp(reg map[string]int64) *Interp {
 		ip.vars[k] = binding{val: numVal(float64(v)), exists: true}
 	}
 	return ip
-}
-
-func errOrOK(err error) string {
-	if err == nil {
-		return "ok"
-	}
-	return "error: " + err.Error()
 }
 
 // setBits lists the positions of set bits in n, low to high.
