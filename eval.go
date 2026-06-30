@@ -33,6 +33,36 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		ip.print(val) // output is reversible state, not a raw side effect
 		return nilVal(), nil
+	case CompoundAssign:
+		cur, ok := ip.get(v.Name)
+		if !ok {
+			return Value{}, fmt.Errorf("cannot update undefined variable %q", v.Name)
+		}
+		if cur.Kind != NumKind {
+			return Value{}, fmt.Errorf("reversible update needs a number, %q is %s", v.Name, cur.typeName())
+		}
+		rhs, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		if rhs.Kind != NumKind {
+			return Value{}, fmt.Errorf("reversible update needs a number, got %s", rhs.typeName())
+		}
+		delta := rhs.Num
+		if v.Op == MINUS {
+			delta = -delta
+		}
+		ip.incr(v.Name, delta)
+		return numVal(cur.Num + delta), nil
+	case Swap:
+		if _, ok := ip.get(v.A); !ok {
+			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.A)
+		}
+		if _, ok := ip.get(v.B); !ok {
+			return Value{}, fmt.Errorf("cannot swap undefined variable %q", v.B)
+		}
+		ip.swap(v.A, v.B)
+		return nilVal(), nil
 	case Block:
 		return evalBlock(v, ip)
 	case If:

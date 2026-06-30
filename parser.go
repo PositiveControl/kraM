@@ -18,6 +18,17 @@ type Assign struct {
 	Value Node
 }
 type Print struct{ Value Node }
+
+// CompoundAssign is a reversible update: `name += value` or `name -= value`.
+// Op is PLUS or MINUS.
+type CompoundAssign struct {
+	Name  string
+	Op    TokKind
+	Value Node
+}
+
+// Swap exchanges two variables: `a <=> b`. Self-inverse, no information lost.
+type Swap struct{ A, B string }
 type Block struct{ Stmts []Node }
 type If struct {
 	Cond, Then Node
@@ -40,7 +51,9 @@ func (BoolLit) node()   {}
 func (StrLit) node()    {}
 func (Var) node()       {}
 func (Assign) node()    {}
-func (Print) node()     {}
+func (Print) node()          {}
+func (CompoundAssign) node() {}
+func (Swap) node()           {}
 func (Block) node()     {}
 func (If) node()        {}
 func (While) node()     {}
@@ -122,10 +135,28 @@ func (p *Parser) parseStmt() Node {
 	case LBRACE:
 		return p.parseBlock()
 	}
-	if p.cur().Kind == IDENT && p.toks[p.pos+1].Kind == ASSIGN {
-		name := p.advance().Lit
-		p.advance() // '='
-		return Assign{Name: name, Value: p.parseExpr(0)}
+	if p.cur().Kind == IDENT {
+		switch p.toks[p.pos+1].Kind {
+		case ASSIGN:
+			name := p.advance().Lit
+			p.advance() // '='
+			return Assign{Name: name, Value: p.parseExpr(0)}
+		case PLUSEQ, MINUSEQ:
+			name := p.advance().Lit
+			op := PLUS
+			if p.advance().Kind == MINUSEQ {
+				op = MINUS
+			}
+			return CompoundAssign{Name: name, Op: op, Value: p.parseExpr(0)}
+		case SWAP:
+			a := p.advance().Lit
+			p.advance() // '<=>'
+			if p.cur().Kind != IDENT {
+				p.fail("expected variable after '<=>', got %s", p.cur())
+				return nil
+			}
+			return Swap{A: a, B: p.advance().Lit}
+		}
 	}
 	return p.parseExpr(0)
 }

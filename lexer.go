@@ -32,9 +32,12 @@ const (
 	IF
 	ELSE
 	WHILE
-	LBRACE // {
-	RBRACE // }
-	SEMI   // ;
+	LBRACE  // {
+	RBRACE  // }
+	SEMI    // ;
+	PLUSEQ  // +=  reversible update
+	MINUSEQ // -=  reversible update
+	SWAP    // <=> reversible swap
 )
 
 type Token struct {
@@ -101,6 +104,12 @@ func kindName(k TokKind) string {
 		return "RBRACE"
 	case SEMI:
 		return "SEMI"
+	case PLUSEQ:
+		return "PLUSEQ"
+	case MINUSEQ:
+		return "MINUSEQ"
+	case SWAP:
+		return "SWAP"
 	default:
 		return "ILLEGAL"
 	}
@@ -116,11 +125,21 @@ func Lex(src string) []Token {
 		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
 			i++
 		case c == '+':
-			toks = append(toks, Token{PLUS, "+", i})
-			i++
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{PLUSEQ, "+=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{PLUS, "+", i})
+				i++
+			}
 		case c == '-':
-			toks = append(toks, Token{MINUS, "-", i})
-			i++
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{MINUSEQ, "-=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{MINUS, "-", i})
+				i++
+			}
 		case c == '*':
 			toks = append(toks, Token{STAR, "*", i})
 			i++
@@ -151,7 +170,10 @@ func Lex(src string) []Token {
 				i++
 			}
 		case c == '<':
-			if peek(src, i+1) == '=' {
+			if peek(src, i+1) == '=' && peek(src, i+2) == '>' {
+				toks = append(toks, Token{SWAP, "<=>", i})
+				i += 3
+			} else if peek(src, i+1) == '=' {
 				toks = append(toks, Token{LE, "<=", i})
 				i += 2
 			} else {

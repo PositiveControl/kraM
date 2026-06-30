@@ -40,6 +40,34 @@ func (e varEdit) label() string {
 	return fmt.Sprintf("%s = %s  (was %s)", e.name, e.after.val, e.before.val)
 }
 
+// incrEdit is a *structurally* reversible mutation: x += delta. Unlike varEdit
+// it stores no prior value — the inverse is computed by negating the delta,
+// the way a reversible adder gate inverts without recording its input. This is
+// the adiabatic-friendly mutation class; destructive '=' (varEdit) is not.
+// ponytail: float add/sub isn't bit-exact, so undo isn't perfectly lossless;
+// switch to integers/fixed-point when a real reversible backend needs exactness.
+type incrEdit struct {
+	name  string
+	delta float64
+}
+
+func (e incrEdit) redo(ip *Interp) { b := ip.vars[e.name]; b.val.Num += e.delta; ip.vars[e.name] = b }
+func (e incrEdit) undo(ip *Interp) { b := ip.vars[e.name]; b.val.Num -= e.delta; ip.vars[e.name] = b }
+func (e incrEdit) label() string {
+	if e.delta < 0 {
+		return fmt.Sprintf("%s -= %g", e.name, -e.delta)
+	}
+	return fmt.Sprintf("%s += %g", e.name, e.delta)
+}
+
+// swapEdit exchanges two variables. It is self-inverse — redo and undo are the
+// same operation — like a Fredkin/controlled-swap gate. Stores only the names.
+type swapEdit struct{ a, b string }
+
+func (e swapEdit) redo(ip *Interp) { ip.vars[e.a], ip.vars[e.b] = ip.vars[e.b], ip.vars[e.a] }
+func (e swapEdit) undo(ip *Interp) { e.redo(ip) }
+func (e swapEdit) label() string   { return fmt.Sprintf("%s <=> %s", e.a, e.b) }
+
 // printEdit makes output a reversible thing: redo appends to the buffer, undo
 // pops it. The physical terminal is append-only, but this buffer is the model
 // of truth — :output renders it at the current point in time.
@@ -96,6 +124,17 @@ func (ip *Interp) set(name string, val Value) {
 
 func (ip *Interp) print(val Value) {
 	ip.do(printEdit{val: val})
+}
+
+// incr applies a reversible `x += delta`. The caller guarantees name exists
+// and holds a number.
+func (ip *Interp) incr(name string, delta float64) {
+	ip.do(incrEdit{name: name, delta: delta})
+}
+
+// swap exchanges two existing variables reversibly.
+func (ip *Interp) swap(a, b string) {
+	ip.do(swapEdit{a: a, b: b})
 }
 
 // Undo reverses the most recent operation. Returns false if there is no history.
