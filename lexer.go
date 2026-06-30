@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type TokKind int
 
@@ -8,6 +11,7 @@ const (
 	EOF TokKind = iota
 	ILLEGAL
 	NUMBER
+	STRING
 	PLUS
 	MINUS
 	STAR
@@ -49,6 +53,8 @@ func kindName(k TokKind) string {
 		return "EOF"
 	case NUMBER:
 		return "NUMBER"
+	case STRING:
+		return "STRING"
 	case PLUS:
 		return "PLUS"
 	case MINUS:
@@ -167,6 +173,42 @@ func Lex(src string) []Token {
 			} else {
 				toks = append(toks, Token{ILLEGAL, "!", i})
 				i++
+			}
+		case c == '"':
+			start := i
+			i++ // skip opening quote
+			var sb strings.Builder
+			terminated := false
+			for i < len(src) {
+				ch := src[i]
+				if ch == '\\' && i+1 < len(src) {
+					switch src[i+1] {
+					case 'n':
+						sb.WriteByte('\n')
+					case 't':
+						sb.WriteByte('\t')
+					case '"':
+						sb.WriteByte('"')
+					case '\\':
+						sb.WriteByte('\\')
+					default:
+						sb.WriteByte(src[i+1])
+					}
+					i += 2
+					continue
+				}
+				if ch == '"' {
+					terminated = true
+					i++
+					break
+				}
+				sb.WriteByte(ch)
+				i++
+			}
+			if terminated {
+				toks = append(toks, Token{STRING, sb.String(), start})
+			} else {
+				toks = append(toks, Token{ILLEGAL, src[start:i], start})
 			}
 		case isAlpha(c):
 			start := i

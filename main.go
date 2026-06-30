@@ -96,7 +96,7 @@ func reconcileOutput(ip *Interp, shown *int) {
 	switch {
 	case len(ip.output) > *shown:
 		for _, v := range ip.output[*shown:] {
-			fmt.Println(v)
+			fmt.Println(v.Raw())
 		}
 	case len(ip.output) < *shown:
 		fmt.Printf("↩ retracted %d output line(s) — :output shows current\n", *shown-len(ip.output))

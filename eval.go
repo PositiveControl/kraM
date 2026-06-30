@@ -11,6 +11,8 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		return numVal(v.Val), nil
 	case BoolLit:
 		return boolVal(v.Val), nil
+	case StrLit:
+		return strVal(v.Val), nil
 	case Var:
 		val, ok := ip.get(v.Name)
 		if !ok {
@@ -116,14 +118,25 @@ func evalBinary(b Binary, ip *Interp) (Value, error) {
 		return boolVal(!valEqual(l, r)), nil
 	}
 
+	// + is overloaded: numeric add or string concat.
+	if b.Op == PLUS {
+		switch {
+		case l.Kind == NumKind && r.Kind == NumKind:
+			return numVal(l.Num + r.Num), nil
+		case l.Kind == StrKind && r.Kind == StrKind:
+			return strVal(l.Str + r.Str), nil
+		default:
+			return Value{}, fmt.Errorf("operator + needs two numbers or two strings, got %s and %s",
+				l.typeName(), r.typeName())
+		}
+	}
+
 	// Remaining operators are numeric. Reject non-numbers.
 	if l.Kind != NumKind || r.Kind != NumKind {
 		return Value{}, fmt.Errorf("operator %s needs numbers, got %s and %s",
 			opSym(b.Op), l.typeName(), r.typeName())
 	}
 	switch b.Op {
-	case PLUS:
-		return numVal(l.Num + r.Num), nil
 	case MINUS:
 		return numVal(l.Num - r.Num), nil
 	case STAR:
@@ -155,6 +168,10 @@ func valEqual(a, b Value) bool {
 		return a.Num == b.Num
 	case BoolKind:
 		return a.Bool == b.Bool
+	case StrKind:
+		return a.Str == b.Str
+	case NilKind:
+		return true // nil == nil
 	}
 	return false
 }

@@ -11,6 +11,7 @@ type Node interface{ node() }
 
 type NumberLit struct{ Val float64 }
 type BoolLit struct{ Val bool }
+type StrLit struct{ Val string }
 type Var struct{ Name string }
 type Assign struct {
 	Name  string
@@ -36,6 +37,7 @@ type Binary struct {
 
 func (NumberLit) node() {}
 func (BoolLit) node()   {}
+func (StrLit) node()    {}
 func (Var) node()       {}
 func (Assign) node()    {}
 func (Print) node()     {}
@@ -196,6 +198,8 @@ func (p *Parser) parsePrefix() Node {
 			return nil
 		}
 		return NumberLit{Val: v}
+	case STRING:
+		return StrLit{Val: t.Lit}
 	case IDENT:
 		return Var{Name: t.Lit}
 	case TRUE:

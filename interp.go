@@ -175,7 +175,7 @@ func (ip *Interp) OutputString() string {
 	}
 	var b strings.Builder
 	for _, v := range ip.output {
-		fmt.Fprintln(&b, v)
+		fmt.Fprintln(&b, v.Raw())
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
