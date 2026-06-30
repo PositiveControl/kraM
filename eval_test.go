@@ -71,6 +71,13 @@ func TestEval(t *testing.T) {
 		{"x = 2; local t = 10; t -= x; t", "8"},
 		{"local t = 3; delocal t = 3; 7", "7"},
 		{"a = 7; reverse { local t = 0; t += a; delocal t = a }; a", "7"},
+		// logical operators
+		{"x = 5; x > 1 && x < 10", "true"},
+		{"x = 5; x > 10 || x == 5", "true"},
+		{"x = 5; !(x == 5)", "false"},
+		{"!false && true", "true"},          // ! binds tighter than &&
+		{"true || false && false", "true"},  // && binds tighter than ||
+		{"a = [1, 2, 3]; i = 5; i < 3 && a[i] > 0", "false"}, // short-circuit guards the index
 	}
 	for _, tc := range tests {
 		got, err := evalSrc(t, tc.src)
@@ -103,6 +110,8 @@ func TestEvalErrors(t *testing.T) {
 		{"y = 1; local y = 2", "already exists"},
 		{"local a = 5; delocal a = 6", "expected 6"},
 		{"delocal z = 0", "does not exist"},
+		{"true && 5", "must be bool"},
+		{"!5", "needs a bool"},
 	}
 	for _, tc := range tests {
 		_, err := evalSrc(t, tc.src)

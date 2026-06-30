@@ -159,6 +159,8 @@ func (Delocal) node()        {}
 // Binding power per infix operator. Higher binds tighter.
 // Add new operators here; the loop in parseExpr needs no changes.
 var infixBP = map[TokKind]int{
+	OR:    2,
+	AND:   3,
 	EQ:    5,
 	NE:    5,
 	LT:    7,
@@ -442,6 +444,8 @@ func (p *Parser) parsePrefix() Node {
 		return BoolLit{Val: false}
 	case MINUS:
 		return Unary{Op: MINUS, Right: p.parseExpr(30)} // unary binds tighter than * /
+	case NOT:
+		return Unary{Op: NOT, Right: p.parseExpr(30)} // boolean negation
 	case LPAREN:
 		inner := p.parseExpr(0)
 		if p.cur().Kind != RPAREN {

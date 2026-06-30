@@ -52,6 +52,9 @@ const (
 	RBRACK  // ]
 	LOCAL   // local (introduce a scoped variable)
 	DELOCAL // delocal (remove a scoped variable, asserting its value)
+	AND     // &&
+	OR      // ||
+	NOT     // !  (boolean negation)
 )
 
 type Token struct {
@@ -152,6 +155,12 @@ func kindName(k TokKind) string {
 		return "LOCAL"
 	case DELOCAL:
 		return "DELOCAL"
+	case AND:
+		return "AND"
+	case OR:
+		return "OR"
+	case NOT:
+		return "NOT"
 	default:
 		return "ILLEGAL"
 	}
@@ -256,7 +265,23 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{NE, "!=", i})
 				i += 2
 			} else {
-				toks = append(toks, Token{ILLEGAL, "!", i})
+				toks = append(toks, Token{NOT, "!", i})
+				i++
+			}
+		case c == '&':
+			if peek(src, i+1) == '&' {
+				toks = append(toks, Token{AND, "&&", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{ILLEGAL, "&", i})
+				i++
+			}
+		case c == '|':
+			if peek(src, i+1) == '|' {
+				toks = append(toks, Token{OR, "||", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{ILLEGAL, "|", i})
 				i++
 			}
 		case c == '"':

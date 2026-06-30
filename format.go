@@ -19,6 +19,9 @@ func format(n Node) string {
 	case Var:
 		return v.Name
 	case Unary:
+		if v.Op == NOT {
+			return "!" + format(v.Right)
+		}
 		return "-" + format(v.Right)
 	case Binary:
 		return format(v.Left) + " " + opSym(v.Op) + " " + format(v.Right)

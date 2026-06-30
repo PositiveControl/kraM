@@ -225,6 +225,12 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+		if v.Op == NOT {
+			if r.Kind != BoolKind {
+				return Value{}, fmt.Errorf("'!' needs a bool, got %s", r.typeName())
+			}
+			return boolVal(!r.Bool), nil
+		}
 		if r.Kind != NumKind {
 			return Value{}, fmt.Errorf("cannot negate %s", r.typeName())
 		}
@@ -539,6 +545,25 @@ func evalBlock(b Block, ip *Interp) (Value, error) {
 }
 
 func evalBinary(b Binary, ip *Interp) (Value, error) {
+	// && and || short-circuit, so a guard like `i < len && a[i] > 0` is safe.
+	if b.Op == AND || b.Op == OR {
+		left, err := evalCond(b.Left, ip, "'&&'/'||' operand")
+		if err != nil {
+			return Value{}, err
+		}
+		if b.Op == AND && !left {
+			return boolVal(false), nil
+		}
+		if b.Op == OR && left {
+			return boolVal(true), nil
+		}
+		right, err := evalCond(b.Right, ip, "'&&'/'||' operand")
+		if err != nil {
+			return Value{}, err
+		}
+		return boolVal(right), nil
+	}
+
 	l, err := Eval(b.Left, ip)
 	if err != nil {
 		return Value{}, err
@@ -619,6 +644,7 @@ func opSym(k TokKind) string {
 	for sym, kind := range map[string]TokKind{
 		"+": PLUS, "-": MINUS, "*": STAR, "/": SLASH,
 		"<": LT, ">": GT, "<=": LE, ">=": GE, "==": EQ, "!=": NE,
+		"&&": AND, "||": OR,
 	} {
 		if kind == k {
 			return sym
