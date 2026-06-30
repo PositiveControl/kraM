@@ -58,6 +58,22 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":invert") {
+			code := strings.TrimSpace(strings.TrimPrefix(line, ":invert"))
+			ast, err := Parse(code)
+			if err != nil {
+				fmt.Println("parse error:", err)
+				continue
+			}
+			inv, err := invert(ast)
+			if err != nil {
+				fmt.Println("not reversible:", err)
+				continue
+			}
+			fmt.Println(format(inv))
+			continue
+		}
+
 		if strings.HasPrefix(line, ":load") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":load"))
 			ast, err := Parse(code)
@@ -146,6 +162,7 @@ func runMeta(line string, ip *Interp) {
 	case ":output":
 		fmt.Println(ip.OutputString())
 	case ":help":
+		fmt.Println(":invert CODE  print the structural inverse of a program")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")
