@@ -378,26 +378,30 @@ func (c *bitCircuit) foldIndex(idx Node) (int, error) {
 
 // emitIf lowers a reversible if to controlled gates: compute the condition into
 // an ancilla bit, apply each branch gate controlled on it, then uncompute the
-// bit. Only `var == const` conditions are supported (an equality comparator);
-// the branch must not modify the condition variable, and an exit assertion is
-// required (the if must be reversible).
+// bit. The condition may be a comparison or any && / || / ! combination of
+// comparisons. The branch must not modify a condition variable, and an exit
+// assertion is required (the if must be reversible).
 func (c *bitCircuit) emitIf(v If) error {
 	if v.Exit == nil {
 		return fmt.Errorf("if must be reversible (add an 'assert' exit) to compile")
 	}
-	ct, err := comparisonCond(v.Cond)
-	if err != nil {
-		return err
-	}
 	written := map[string]bool{}
 	collectWrites(v.Then, written)
 	collectWrites(v.Else, written)
-	if written[ct.lhs] || (!ct.isConst && written[ct.rhs]) {
-		return fmt.Errorf("branch modifies a condition variable — not lowerable to a fixed control")
+	bad := ""
+	collectCondVars(v.Cond, func(name string) {
+		if written[name] {
+			bad = name
+		}
+	})
+	if bad != "" {
+		return fmt.Errorf("branch modifies condition variable %q — not lowerable to a fixed control", bad)
 	}
 
 	q := c.alloc(1)[0]
-	c.compareToBit(ct, q) // q = (condition)
+	if err := c.condToBit(v.Cond, q); err != nil { // q = (condition)
+		return err
+	}
 
 	then, err := c.emitSub(v.Then)
 	if err != nil {
@@ -418,9 +422,60 @@ func (c *bitCircuit) emitIf(v If) error {
 		c.x(q)
 	}
 
-	c.compareToBit(ct, q) // uncompute q (the comparator is self-inverse)
+	_ = c.condToBit(v.Cond, q) // uncompute q (condToBit is self-inverse; already validated)
 	c.free(q)
 	return nil
+}
+
+// condToBit sets q ^= (condition), for q a clean (zero) ancilla. It handles
+// comparisons and && / || / ! by computing sub-conditions into their own
+// ancillas and combining them. Self-inverse: applied twice it restores q and
+// all scratch, which is how emitIf uncomputes the control bit.
+func (c *bitCircuit) condToBit(cond Node, q int) error {
+	switch n := cond.(type) {
+	case Unary:
+		if n.Op != NOT {
+			return fmt.Errorf("unsupported condition")
+		}
+		qa := c.alloc(1)[0]
+		if err := c.condToBit(n.Right, qa); err != nil {
+			return err
+		}
+		c.cnot(qa, q) // q ^= a
+		c.x(q)        // q = !a   (q started 0)
+		_ = c.condToBit(n.Right, qa)
+		c.free(qa)
+		return nil
+	case Binary:
+		switch n.Op {
+		case AND, OR:
+			qa := c.alloc(1)[0]
+			qb := c.alloc(1)[0]
+			if err := c.condToBit(n.Left, qa); err != nil {
+				return err
+			}
+			if err := c.condToBit(n.Right, qb); err != nil {
+				return err
+			}
+			if n.Op == OR { // q = a OR b = a XOR b XOR (a AND b)
+				c.cnot(qa, q)
+				c.cnot(qb, q)
+			}
+			c.toff(qa, qb, q) // q ^= a AND b
+			_ = c.condToBit(n.Right, qb)
+			_ = c.condToBit(n.Left, qa)
+			c.free(qa, qb)
+			return nil
+		case EQ, NE, LT, GT, LE, GE:
+			ct, err := comparisonCond(n)
+			if err != nil {
+				return err
+			}
+			c.compareToBit(ct, q)
+			return nil
+		}
+	}
+	return fmt.Errorf("circuit if-condition must be a comparison or a && / || / ! of comparisons")
 }
 
 // compareToBit sets q ^= (condition). Everything reduces to equality or the >=

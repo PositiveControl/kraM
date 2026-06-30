@@ -262,6 +262,22 @@ func TestLocalCircuitMatchesInterpreter(t *testing.T) {
 	}
 }
 
+// TestCompoundIfCircuitMatchesInterpreter: && / || / ! conditions lower to
+// controlled gates matching the interpreter, on both branches.
+func TestCompoundIfCircuitMatchesInterpreter(t *testing.T) {
+	cases := []struct{ init, prog string }{
+		{"x = 5; r = 0", "if x > 0 && x < 10 { r += 1 } else { r += 2 } assert x > 0 && x < 10"},
+		{"x = 15; r = 0", "if x > 0 && x < 10 { r += 1 } else { r += 2 } assert x > 0 && x < 10"},
+		{"x = 15; r = 0", "if x < 0 || x > 10 { r += 1 } else { r += 2 } assert x < 0 || x > 10"},
+		{"x = 5; r = 0", "if x < 0 || x > 10 { r += 1 } else { r += 2 } assert x < 0 || x > 10"},
+		{"x = 5; r = 0", "if !(x == 3) { r += 1 } else { r += 2 } assert !(x == 3)"},
+		{"x = 5; y = 2; r = 0", "if x > 0 && y < 5 || x == 99 { r += 1 } else { r += 2 } assert x > 0 && y < 5 || x == 99"},
+	}
+	for _, tc := range cases {
+		bitMatchesInterp(t, tc.init, tc.prog)
+	}
+}
+
 // TestProcCircuitMatchesInterpreter: parameterized procedures, inlined with
 // by-reference args, lower to gates matching the interpreter.
 func TestProcCircuitMatchesInterpreter(t *testing.T) {

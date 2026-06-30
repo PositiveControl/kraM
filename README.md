@@ -168,8 +168,8 @@ Early sketch. `:circuit` is a register-level view; `:gates` decomposes to real
 elementary gates (X / CNOT / Toffoli, fixed 16-bit registers, arithmetic mod
 2^16). `:gates` lowers procedures (inlined) and reversible `if`s — conditions can
 compare a variable to a constant or to another variable (`== != < > <= >=`),
-via an equality check or a subtract-based comparator, to controlled gates.
-Reversible loops are unrolled using the iteration count from the current state
+via an equality check or a subtract-based comparator — and `&& || !`
+combinations of those — to controlled gates. Reversible loops are unrolled using the iteration count from the current state
 (the circuit is specialised to that count); nested loops can't be unrolled. Ancilla wires are recycled, so a circuit's width is bounded by
 peak concurrent scratch, not program length. `+=`/`-=` aren't bit-exact in the
 *interpreter* (`^=` is); the *gate* circuit is exact mod 2^16. Array element ops
