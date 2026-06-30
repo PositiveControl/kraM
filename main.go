@@ -35,6 +35,9 @@ func main() {
 		if line == "" {
 			continue
 		}
+		if w := firstWord(line); w == ":exit" || w == ":quit" {
+			return
+		}
 
 		// '!!' expands to the last code line (shell-style), so e.g.
 		// `reverse { !! }` runs the inverse of whatever you just typed.
@@ -293,6 +296,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":output     show the output buffer at the current time")
 		fmt.Println(":strict     toggle strict mode (overwrite = error)")
 		fmt.Println(":reset      clear all state and history")
+		fmt.Println(":exit       quit (also :quit, or Ctrl-D)")
 		fmt.Println(":help       this list")
 	default:
 		fmt.Printf("unknown command %q (try :help)\n", line)
