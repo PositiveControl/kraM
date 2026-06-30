@@ -75,6 +75,41 @@ it either direction — `call` forward, `uncall` backward:
 > :undo        # walk back one mutation at a time
 ```
 
+## Demo: reversible Fibonacci
+
+`fib.kr` computes Fibonacci with only reversible updates, then runs the loop
+backward to recover the inputs exactly.
+
+```sh
+make build
+./kram fib.kr
+```
+```
+fib(10) pair: 55, 89
+reversed back to: a=0, b=1, i=0
+```
+
+Explore it interactively in the REPL:
+
+```sh
+./krapl
+```
+```
+a = 0; b = 1; i = 0; n = 10
+proc fibstep(x, y) { x += y; x <=> y }
+from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
+print "got " + a + ", " + b
+:history     # every mutation — all reversible
+:verify from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
+```
+
+`:verify` unrolls the loop, lowers it to `X / CNOT / Toffoli` gates, simulates
+them, and confirms the circuit matches the interpreter. `:gates <same code>`
+prints the netlist; `:undo` walks the computation backward one step at a time.
+
+One demo, the whole language: reversible updates, a parameterized procedure, a
+reversible loop, time travel, and verified compilation to a reversible circuit.
+
 ## Commands
 
 `:undo` `:redo` `:history` `:env` — time travel and inspection
