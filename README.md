@@ -131,6 +131,10 @@ compare-exchange records whether it swapped into a trace array; that recorded
 bit is the reversible-if's exit assertion. `uncall` replays the trace backward
 and restores the original order exactly.
 
+`./kram gcd.kr` does the same for Euclid's GCD (by subtraction): each step
+records which value it reduced, so `uncall` recovers the two inputs from the
+gcd and the trace — even though gcd alone is many-to-one.
+
 ## Commands
 
 `:undo` `:redo` `:history` `:env` — time travel and inspection

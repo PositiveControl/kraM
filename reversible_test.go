@@ -347,6 +347,44 @@ proc sortit {
 	}
 }
 
+// TestReversibleGCD: subtraction-based Euclid with a recorded branch trace
+// computes the gcd and uncall restores the original inputs.
+func TestReversibleGCD(t *testing.T) {
+	gcd := func(x, y int) int {
+		for y != 0 {
+			x, y = y, x%y
+		}
+		return x
+	}
+	const proc = `k = 0
+t = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+proc gcd {
+  from k == 0 { } loop {
+    if a > b { a -= b; t[k] += 1 } else { b -= a } assert t[k] == 1
+    k += 1
+  } until a == b
+}`
+	rng := rand.New(rand.NewSource(11))
+	for iter := 0; iter < 200; iter++ {
+		x := 1 + rng.Intn(20)
+		y := 1 + rng.Intn(20)
+		ip := NewInterp()
+		mustRun(t, ip, fmt.Sprintf("a = %d; b = %d", x, y))
+		mustRun(t, ip, proc)
+		mustRun(t, ip, "call gcd")
+
+		if got, _ := ip.get("a"); int(got.Num) != gcd(x, y) {
+			t.Fatalf("gcd(%d,%d) = %v, want %d", x, y, got.Num, gcd(x, y))
+		}
+		mustRun(t, ip, "uncall gcd")
+		ga, _ := ip.get("a")
+		gb, _ := ip.get("b")
+		if int(ga.Num) != x || int(gb.Num) != y {
+			t.Fatalf("uncall did not restore gcd(%d,%d): got a=%v b=%v", x, y, ga.Num, gb.Num)
+		}
+	}
+}
+
 // TestAncillaReuse: ancilla wires are recycled, so a straight-line program's
 // wire count is bounded by peak concurrent use, not total length.
 func TestAncillaReuse(t *testing.T) {

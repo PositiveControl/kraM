@@ -1,0 +1,28 @@
+# kraMLang reversible GCD (Euclid by subtraction).   Run:  ./kram gcd.kr
+#
+# GCD is irreversible on its own: many (a, b) pairs share the same gcd, so the
+# inputs can't be recovered from the result. We make it reversible by RECORDING
+# each step's branch — whether we subtracted b from a, or a from b — into a
+# trace. Each step's recorded bit is the reversible-if's exit assertion.
+#
+# call gcd  leaves the gcd in a (and b) and fills the trace.
+# uncall gcd  replays the trace backward and restores the original a and b.
+
+a = 48
+b = 36
+k = 0
+t = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+proc gcd {
+  from k == 0 { } loop {
+    if a > b { a -= b; t[k] += 1 } else { b -= a } assert t[k] == 1
+    k += 1
+  } until a == b
+}
+
+print "inputs:   a=" + a + ", b=" + b
+call gcd
+print "gcd:      " + a
+print "trace:    " + t
+uncall gcd
+print "restored: a=" + a + ", b=" + b
