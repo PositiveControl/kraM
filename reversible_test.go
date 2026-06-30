@@ -305,6 +305,48 @@ func TestArrayRoundTrip(t *testing.T) {
 	}
 }
 
+// TestReversibleSort: a recorded-trace bubble sort sorts the array, and uncall
+// (replaying the trace backward) restores the original exactly.
+func TestReversibleSort(t *testing.T) {
+	const sortit = `sw = [0,0,0,0,0,0,0,0,0,0]
+proc sortit {
+  if a[0] > a[1] { a[0] <=> a[1]; sw[0] += 1 } else { } assert sw[0] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[1] += 1 } else { } assert sw[1] == 1
+  if a[2] > a[3] { a[2] <=> a[3]; sw[2] += 1 } else { } assert sw[2] == 1
+  if a[3] > a[4] { a[3] <=> a[4]; sw[3] += 1 } else { } assert sw[3] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[4] += 1 } else { } assert sw[4] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[5] += 1 } else { } assert sw[5] == 1
+  if a[2] > a[3] { a[2] <=> a[3]; sw[6] += 1 } else { } assert sw[6] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[7] += 1 } else { } assert sw[7] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[8] += 1 } else { } assert sw[8] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[9] += 1 } else { } assert sw[9] == 1
+}`
+	rng := rand.New(rand.NewSource(9))
+	for iter := 0; iter < 200; iter++ {
+		vals := rng.Perm(5)
+		elems := make([]string, 5)
+		for i, v := range vals {
+			elems[i] = fmt.Sprintf("%d", v)
+		}
+		ip := NewInterp()
+		mustRun(t, ip, "a = ["+strings.Join(elems, ", ")+"]")
+		before, _ := ip.get("a")
+		mustRun(t, ip, sortit)
+		mustRun(t, ip, "call sortit")
+
+		sorted, _ := ip.get("a")
+		for i := 1; i < len(sorted.Arr); i++ {
+			if sorted.Arr[i-1].Num > sorted.Arr[i].Num {
+				t.Fatalf("not sorted: %s (from %s)", sorted, before)
+			}
+		}
+		mustRun(t, ip, "uncall sortit")
+		if restored, _ := ip.get("a"); restored.String() != before.String() {
+			t.Fatalf("uncall did not restore: %s -> sorted %s -> %s", before, sorted, restored)
+		}
+	}
+}
+
 // TestAncillaReuse: ancilla wires are recycled, so a straight-line program's
 // wire count is bounded by peak concurrent use, not total length.
 func TestAncillaReuse(t *testing.T) {

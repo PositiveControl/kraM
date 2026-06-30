@@ -125,6 +125,12 @@ the loop for real, while `i == 0`).
 One demo, the whole language: reversible updates, a parameterized procedure, a
 reversible loop, time travel, and verified compilation to a reversible circuit.
 
+`./kram sort.kr` is a deeper one — a reversible bubble sort. Sorting isn't
+reversible on its own (many inputs collapse to one sorted output), so each
+compare-exchange records whether it swapped into a trace array; that recorded
+bit is the reversible-if's exit assertion. `uncall` replays the trace backward
+and restores the original order exactly.
+
 ## Commands
 
 `:undo` `:redo` `:history` `:env` — time travel and inspection

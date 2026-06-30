@@ -1,0 +1,37 @@
+# kraMLang reversible sort.   Run:  ./kram sort.kr
+#
+# Sorting is NOT reversible on its own: many inputs map to the same sorted
+# output, so the original order can't be recovered from the result alone. We
+# make it reversible by RECORDING each swap. Every compare-exchange writes a bit
+# into the `sw` trace saying whether it swapped — and that recorded bit IS the
+# reversible-if's exit assertion. The trace is the information that would
+# otherwise be destroyed.
+#
+# `call sortit` sorts the array and fills the trace.
+# `uncall sortit` replays the trace backward and restores the original array.
+
+a = [5, 2, 4, 1, 3]
+sw = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # one bit per compare-exchange
+
+# Bubble sort as a fixed sequence of compare-exchanges. Each one:
+#   if a[i] > a[i+1]  then swap and record the swap in sw[m]
+#   the exit assertion `sw[m] == 1` holds iff the swap branch ran.
+proc sortit {
+  if a[0] > a[1] { a[0] <=> a[1]; sw[0] += 1 } else { } assert sw[0] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[1] += 1 } else { } assert sw[1] == 1
+  if a[2] > a[3] { a[2] <=> a[3]; sw[2] += 1 } else { } assert sw[2] == 1
+  if a[3] > a[4] { a[3] <=> a[4]; sw[3] += 1 } else { } assert sw[3] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[4] += 1 } else { } assert sw[4] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[5] += 1 } else { } assert sw[5] == 1
+  if a[2] > a[3] { a[2] <=> a[3]; sw[6] += 1 } else { } assert sw[6] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[7] += 1 } else { } assert sw[7] == 1
+  if a[1] > a[2] { a[1] <=> a[2]; sw[8] += 1 } else { } assert sw[8] == 1
+  if a[0] > a[1] { a[0] <=> a[1]; sw[9] += 1 } else { } assert sw[9] == 1
+}
+
+print "before:   " + a
+call sortit
+print "sorted:   " + a
+print "trace:    " + sw
+uncall sortit
+print "restored: " + a
