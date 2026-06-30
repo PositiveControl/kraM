@@ -113,6 +113,8 @@ type Interp struct {
 	stepErr        error         // terminal error, if any
 
 	warnings []string // advisory messages from the last evaluation (not state)
+	notes    []string // informational messages (control-flow summaries)
+	cfDepth  int       // control-flow nesting; only depth-1 statements emit a note
 }
 
 func NewInterp() *Interp {
@@ -155,6 +157,27 @@ func (ip *Interp) DrainWarnings() []string {
 	w := ip.warnings
 	ip.warnings = nil
 	return w
+}
+
+// note records an informational message (e.g. a control-flow summary).
+func (ip *Interp) note(msg string) { ip.notes = append(ip.notes, msg) }
+
+// DrainNotes returns and clears pending info messages.
+func (ip *Interp) DrainNotes() []string {
+	n := ip.notes
+	ip.notes = nil
+	return n
+}
+
+// Reset clears all program state and history — a fresh slate for re-running an
+// experiment. Not reversible (it discards the timeline itself).
+func (ip *Interp) Reset() {
+	ip.vars = map[string]binding{}
+	ip.output = nil
+	ip.past = nil
+	ip.fut = nil
+	ip.warnings = nil
+	ip.notes = nil
 }
 
 // incr applies a reversible `x += delta`. The caller guarantees name exists

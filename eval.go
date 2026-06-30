@@ -110,32 +110,7 @@ func Eval(n Node, ip *Interp) (Value, error) {
 	case Block:
 		return evalBlock(v, ip)
 	case If:
-		taken, err := evalCond(v.Cond, ip, "if condition")
-		if err != nil {
-			return Value{}, err
-		}
-		var out Value
-		if taken {
-			out, err = Eval(v.Then, ip)
-		} else if v.Else != nil {
-			out, err = Eval(v.Else, ip)
-		}
-		if err != nil {
-			return Value{}, err
-		}
-		// Reversible if: the exit assertion must equal which branch ran, so
-		// backward execution can recover the branch without a log.
-		if v.Exit != nil {
-			exit, err := evalCond(v.Exit, ip, "if exit assertion")
-			if err != nil {
-				return Value{}, err
-			}
-			if exit != taken {
-				return Value{}, fmt.Errorf("if exit assertion violated: %s-branch ran but exit is %v",
-					branchName(taken), exit)
-			}
-		}
-		return out, nil
+		return evalIf(v, ip)
 	case Assert:
 		ok, err := evalCond(v.Cond, ip, "assert")
 		if err != nil {
@@ -154,24 +129,7 @@ func Eval(n Node, ip *Interp) (Value, error) {
 	case ReversibleLoop:
 		return evalReversibleLoop(v, ip)
 	case While:
-		// ponytail: hard iteration cap so a runaway loop can't fill the undo
-		// history unbounded. Raise it / make it configurable if real programs hit it.
-		const maxIter = 1_000_000
-		for i := 0; ; i++ {
-			cond, err := evalCond(v.Cond, ip, "while condition")
-			if err != nil {
-				return Value{}, err
-			}
-			if !cond {
-				return nilVal(), nil
-			}
-			if i >= maxIter {
-				return Value{}, fmt.Errorf("while exceeded %d iterations", maxIter)
-			}
-			if _, err := Eval(v.Body, ip); err != nil {
-				return Value{}, err
-			}
-		}
+		return evalWhile(v, ip)
 	case Unary:
 		r, err := Eval(v.Right, ip)
 		if err != nil {
@@ -187,11 +145,82 @@ func Eval(n Node, ip *Interp) (Value, error) {
 	return Value{}, fmt.Errorf("cannot evaluate %T", n)
 }
 
+// evalIf runs an if, enforcing the optional reversible exit assertion, and
+// emits a top-level control-flow note.
+func evalIf(v If, ip *Interp) (Value, error) {
+	ip.cfDepth++
+	defer func() { ip.cfDepth-- }()
+
+	taken, err := evalCond(v.Cond, ip, "if condition")
+	if err != nil {
+		return Value{}, err
+	}
+	var out Value
+	if taken {
+		out, err = Eval(v.Then, ip)
+	} else if v.Else != nil {
+		out, err = Eval(v.Else, ip)
+	}
+	if err != nil {
+		return Value{}, err
+	}
+	// Reversible if: the exit assertion must equal which branch ran, so
+	// backward execution can recover the branch without a log.
+	if v.Exit != nil {
+		exit, err := evalCond(v.Exit, ip, "if exit assertion")
+		if err != nil {
+			return Value{}, err
+		}
+		if exit != taken {
+			return Value{}, fmt.Errorf("if exit assertion violated: %s-branch ran but exit is %v",
+				branchName(taken), exit)
+		}
+	}
+	if ip.cfDepth == 1 { // top-level statement
+		ip.note(fmt.Sprintf("if → %s branch", branchName(taken)))
+	}
+	return out, nil
+}
+
+// evalWhile runs the classic loop and notes its iteration count.
+func evalWhile(v While, ip *Interp) (Value, error) {
+	ip.cfDepth++
+	defer func() { ip.cfDepth-- }()
+
+	// ponytail: hard iteration cap so a runaway loop can't fill the undo
+	// history unbounded. Raise it / make it configurable if real programs hit it.
+	const maxIter = 1_000_000
+	count := 0
+	for {
+		cond, err := evalCond(v.Cond, ip, "while condition")
+		if err != nil {
+			return Value{}, err
+		}
+		if !cond {
+			break
+		}
+		if count >= maxIter {
+			return Value{}, fmt.Errorf("while exceeded %d iterations", maxIter)
+		}
+		if _, err := Eval(v.Body, ip); err != nil {
+			return Value{}, err
+		}
+		count++
+	}
+	if ip.cfDepth == 1 {
+		ip.note(fmt.Sprintf("while: %d iteration(s)", count))
+	}
+	return nilVal(), nil
+}
+
 // evalReversibleLoop runs `from Entry { Do } loop { Rest } until Exit`. Entry
 // must hold on first entry and must fail on every re-entry; the loop ends when
 // Exit holds. Those assertions are what let the loop run backward without a
 // log — the inverse just swaps Entry and Exit.
 func evalReversibleLoop(v ReversibleLoop, ip *Interp) (Value, error) {
+	ip.cfDepth++
+	defer func() { ip.cfDepth-- }()
+
 	const maxIter = 1_000_000
 	entry, err := evalCond(v.Entry, ip, "loop entry assertion")
 	if err != nil {
@@ -203,15 +232,16 @@ func evalReversibleLoop(v ReversibleLoop, ip *Interp) (Value, error) {
 	if _, err := Eval(v.Do, ip); err != nil {
 		return Value{}, err
 	}
-	for i := 0; ; i++ {
+	count := 1 // the initial Do counts as one pass
+	for {
 		exit, err := evalCond(v.Exit, ip, "loop exit assertion")
 		if err != nil {
 			return Value{}, err
 		}
 		if exit {
-			return nilVal(), nil
+			break
 		}
-		if i >= maxIter {
+		if count >= maxIter {
 			return Value{}, fmt.Errorf("reversible loop exceeded %d iterations", maxIter)
 		}
 		if _, err := Eval(v.Rest, ip); err != nil {
@@ -227,7 +257,12 @@ func evalReversibleLoop(v ReversibleLoop, ip *Interp) (Value, error) {
 		if _, err := Eval(v.Do, ip); err != nil {
 			return Value{}, err
 		}
+		count++
 	}
+	if ip.cfDepth == 1 {
+		ip.note(fmt.Sprintf("loop: %d iteration(s)", count))
+	}
+	return nilVal(), nil
 }
 
 // evalCond evaluates a node that must be a bool, naming the context on error.

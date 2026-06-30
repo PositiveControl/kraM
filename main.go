@@ -42,12 +42,19 @@ func main() {
 					fmt.Println("step:", label)
 				}
 				reconcileOutput(ip, &shown)
-				printWarnings(ip)
+				printMessages(ip)
 			case ":env", ":output", ":history", ":help":
 				runMeta(line, ip)
 			default:
 				fmt.Println("stepping in progress — use :step, :env, :output, :history")
 			}
+			continue
+		}
+
+		if firstWord(line) == ":reset" {
+			ip.Reset()
+			shown = 0
+			fmt.Println("state cleared")
 			continue
 		}
 
@@ -81,7 +88,7 @@ func main() {
 			continue
 		}
 		reconcileOutput(ip, &shown)
-		printWarnings(ip)
+		printMessages(ip)
 		if val.Kind != NilKind {
 			fmt.Println(val) // echo real results; print/empty-if produce nil and stay quiet
 		}
@@ -90,9 +97,12 @@ func main() {
 
 func firstWord(line string) string { return strings.Fields(line)[0] }
 
-func printWarnings(ip *Interp) {
+func printMessages(ip *Interp) {
 	for _, w := range ip.DrainWarnings() {
 		fmt.Println("⚠", w)
+	}
+	for _, n := range ip.DrainNotes() {
+		fmt.Println("·", n)
 	}
 }
 
@@ -143,6 +153,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":history    show the timeline")
 		fmt.Println(":env        show current variables")
 		fmt.Println(":output     show the output buffer at the current time")
+		fmt.Println(":reset      clear all state and history")
 		fmt.Println(":help       this list")
 	default:
 		fmt.Printf("unknown command %q (try :help)\n", line)
