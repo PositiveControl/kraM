@@ -135,6 +135,9 @@ and restores the original order exactly.
 records which value it reduced, so `uncall` recovers the two inputs from the
 gcd and the trace — even though gcd alone is many-to-one.
 
+See [docs/demos.md](docs/demos.md) for what each of the four demos
+(`fib.kr`, `reverse.kr`, `sort.kr`, `gcd.kr`) showcases.
+
 ## Commands
 
 `:undo` `:redo` `:history` `:env` — time travel and inspection
