@@ -201,6 +201,14 @@ func TestIfCircuitMatchesInterpreter(t *testing.T) {
 		{"a = 0; x = 5", "if x != 4 { a += 1 } else { a += 2 } assert x != 4"},
 		// constant on the left
 		{"a = 0; x = 2", "if 5 > x { a += 1 } else { a += 2 } assert 5 > x"},
+		// variable vs variable, both outcomes
+		{"r = 0; x = 3; y = 8", "if x < y { r += 1 } else { r += 2 } assert x < y"},
+		{"r = 0; x = 8; y = 3", "if x < y { r += 1 } else { r += 2 } assert x < y"},
+		{"r = 0; x = 5; y = 5", "if x == y { r += 1 } else { r += 2 } assert x == y"},
+		{"r = 0; x = 9; y = 4", "if x >= y { r += 1 } else { r += 2 } assert x >= y"},
+		{"r = 0; x = 2; y = 7", "if x > y { r += 1 } else { r += 2 } assert x > y"},
+		{"r = 0; x = 6; y = 6", "if x <= y { r += 1 } else { r += 2 } assert x <= y"},
+		{"r = 0; x = 6; y = 6", "if x != y { r += 1 } else { r += 2 } assert x != y"},
 	}
 	for _, tc := range cases {
 		bitMatchesInterp(t, tc.init, tc.prog)

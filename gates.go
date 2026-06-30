@@ -240,21 +240,19 @@ func (c *bitCircuit) emitIf(v If) error {
 	if v.Exit == nil {
 		return fmt.Errorf("if must be reversible (add an 'assert' exit) to compile")
 	}
-	condVar, op, k, err := comparisonCond(v.Cond)
+	ct, err := comparisonCond(v.Cond)
 	if err != nil {
 		return err
 	}
 	written := map[string]bool{}
 	collectWrites(v.Then, written)
 	collectWrites(v.Else, written)
-	if written[condVar] {
-		return fmt.Errorf("branch modifies the condition variable %q — not lowerable to a fixed control", condVar)
+	if written[ct.lhs] || (!ct.isConst && written[ct.rhs]) {
+		return fmt.Errorf("branch modifies a condition variable — not lowerable to a fixed control")
 	}
 
-	x := c.reg(condVar)
 	q := c.alloc(1)[0]
-
-	c.compareToBit(x, op, k, q) // q = (condVar <op> k)
+	c.compareToBit(ct, q) // q = (condition)
 
 	then, err := c.emitSub(v.Then)
 	if err != nil {
@@ -275,16 +273,42 @@ func (c *bitCircuit) emitIf(v If) error {
 		c.x(q)
 	}
 
-	c.compareToBit(x, op, k, q) // uncompute q (the comparator is self-inverse)
+	c.compareToBit(ct, q) // uncompute q (the comparator is self-inverse)
 	c.free(q)
 	return nil
 }
 
-// compareToBit sets q ^= (reg <op> k). Every case reduces to equality or the
-// >= comparator, with negation (X on q) for the complementary operators.
-// Applied twice it is the identity (each piece is self-inverse), so emitIf can
-// reuse it to uncompute the condition bit.
-func (c *bitCircuit) compareToBit(reg []int, op TokKind, k int64, q int) {
+// compareToBit sets q ^= (condition). Everything reduces to equality or the >=
+// comparator with optional negation; applied twice it is the identity (each
+// piece is self-inverse), so emitIf reuses it to uncompute the condition bit.
+func (c *bitCircuit) compareToBit(ct condTerm, q int) {
+	x := c.reg(ct.lhs)
+	if ct.isConst {
+		c.compareConst(x, ct.op, ct.k, q)
+		return
+	}
+	y := c.reg(ct.rhs)
+	switch ct.op {
+	case EQ:
+		c.eqVarToBit(x, y, q)
+	case NE:
+		c.eqVarToBit(x, y, q)
+		c.x(q)
+	case GE:
+		c.geVarToBit(x, y, q)
+	case LT:
+		c.geVarToBit(x, y, q)
+		c.x(q)
+	case GT: // x > y  <=>  not (y >= x)
+		c.geVarToBit(y, x, q)
+		c.x(q)
+	case LE: // x <= y <=>  y >= x
+		c.geVarToBit(y, x, q)
+	}
+}
+
+// compareConst handles a variable-vs-constant comparison.
+func (c *bitCircuit) compareConst(reg []int, op TokKind, k int64, q int) {
 	switch op {
 	case EQ:
 		c.equalityToBit(reg, k, q)
@@ -302,6 +326,55 @@ func (c *bitCircuit) compareToBit(reg []int, op TokKind, k int64, q int) {
 		c.geToBit(reg, k+1, q)
 		c.x(q)
 	}
+}
+
+// eqVarToBit sets q ^= (x == y), restoring x and y.
+func (c *bitCircuit) eqVarToBit(x, y []int, q int) {
+	tmp := c.alloc(bitWidth)
+	var fwd []BitGate
+	for i := 0; i < bitWidth; i++ { // tmp = x XOR y
+		fwd = append(fwd, BitGate{BCNOT, x[i], 0, tmp[i]})
+		fwd = append(fwd, BitGate{BCNOT, y[i], 0, tmp[i]})
+	}
+	c.gates = append(c.gates, fwd...)
+	for _, w := range tmp { // flip so tmp is all-ones iff x==y
+		c.x(w)
+	}
+	c.mcx(tmp, q)
+	for _, w := range tmp {
+		c.x(w)
+	}
+	c.gates = append(c.gates, inverseGates(fwd)...) // clear tmp
+	c.free(tmp...)
+}
+
+// geVarToBit sets q ^= (x >= y) via compute-copy-uncompute: s = x - y =
+// x + ~y + 1 (carry-in 1) exposes carry-out = (x >= y); copy it, then run the
+// computation backward to clear all scratch. x and y are restored.
+func (c *bitCircuit) geVarToBit(x, y []int, q int) {
+	s := c.alloc(bitWidth)
+	cr := c.alloc(bitWidth)
+	z := c.alloc(1)[0]
+	cout := c.alloc(1)[0]
+
+	var fwd []BitGate
+	for i := 0; i < bitWidth; i++ { // s = copy of x
+		fwd = append(fwd, BitGate{BCNOT, x[i], 0, s[i]})
+	}
+	for i := 0; i < bitWidth; i++ { // cr = ~y  (copy y, then NOT)
+		fwd = append(fwd, BitGate{BCNOT, y[i], 0, cr[i]})
+		fwd = append(fwd, BitGate{BX, 0, 0, cr[i]})
+	}
+	fwd = append(fwd, BitGate{BX, 0, 0, z}) // carry-in = 1, so s = x + ~y + 1 = x - y
+	fwd = append(fwd, cuccaro(cr, s, z, cout)...)
+
+	c.gates = append(c.gates, fwd...)
+	c.cnot(cout, q) // cout = (x >= y)
+	c.gates = append(c.gates, inverseGates(fwd)...)
+
+	c.free(s...)
+	c.free(cr...)
+	c.free(z, cout)
 }
 
 // geToBit sets q ^= (reg >= k) for unsigned k, leaving reg unchanged. It uses
@@ -415,30 +488,42 @@ func (c *bitCircuit) mcx(controls []int, t int) {
 	c.free(anc...) // ladder restored to zero
 }
 
-// comparisonCond extracts (varName, op, constant) from a `var <cmp> const`
-// condition (or `const <cmp> var`, flipping the operator).
-func comparisonCond(n Node) (string, TokKind, int64, error) {
-	bad := fmt.Errorf("circuit if-condition must compare a variable to a constant (== != < > <= >=)")
+// condTerm describes a circuit-lowerable condition: lhs <op> (const k | rhs).
+type condTerm struct {
+	lhs     string
+	op      TokKind
+	isConst bool
+	k       int64  // when isConst
+	rhs     string // when !isConst
+}
+
+// comparisonCond parses a `var <cmp> const`, `const <cmp> var`, or
+// `var <cmp> var` condition.
+func comparisonCond(n Node) (condTerm, error) {
+	bad := fmt.Errorf("circuit if-condition must be a comparison (== != < > <= >=) of variables/constants")
 	b, ok := n.(Binary)
 	if !ok {
-		return "", 0, 0, bad
+		return condTerm{}, bad
 	}
 	switch b.Op {
 	case EQ, NE, LT, GT, LE, GE:
 	default:
-		return "", 0, 0, bad
+		return condTerm{}, bad
 	}
-	if v, ok := b.Left.(Var); ok {
-		if k, ok := b.Right.(NumberLit); ok {
-			return v.Name, b.Op, int64(k.Val), nil
-		}
+	lv, lIsVar := b.Left.(Var)
+	rv, rIsVar := b.Right.(Var)
+	lk, lIsNum := b.Left.(NumberLit)
+	rk, rIsNum := b.Right.(NumberLit)
+
+	switch {
+	case lIsVar && rIsNum:
+		return condTerm{lhs: lv.Name, op: b.Op, isConst: true, k: int64(rk.Val)}, nil
+	case lIsNum && rIsVar: // const <op> var  ==  var <flip> const
+		return condTerm{lhs: rv.Name, op: flipCmp(b.Op), isConst: true, k: int64(lk.Val)}, nil
+	case lIsVar && rIsVar:
+		return condTerm{lhs: lv.Name, op: b.Op, rhs: rv.Name}, nil
 	}
-	if v, ok := b.Right.(Var); ok {
-		if k, ok := b.Left.(NumberLit); ok {
-			return v.Name, flipCmp(b.Op), int64(k.Val), nil // const <op> var  ==  var <flip> const
-		}
-	}
-	return "", 0, 0, bad
+	return condTerm{}, bad
 }
 
 // flipCmp swaps the sense of a comparison when operands are reversed.
