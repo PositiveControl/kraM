@@ -97,15 +97,19 @@ Explore it interactively in the REPL:
 ```
 a = 0; b = 1; i = 0; n = 10
 proc fibstep(x, y) { x += y; x <=> y }
+:verify from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
 from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
 print "got " + a + ", " + b
 :history     # every mutation — all reversible
-:verify from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
 ```
 
 `:verify` unrolls the loop, lowers it to `X / CNOT / Toffoli` gates, simulates
 them, and confirms the circuit matches the interpreter. `:gates <same code>`
 prints the netlist; `:undo` walks the computation backward one step at a time.
+
+Note: `:verify` / `:gates` / `:circuit` compile against the *current* variables,
+so run them while the loop's start condition still holds (here, before running
+the loop for real, while `i == 0`).
 
 One demo, the whole language: reversible updates, a parameterized procedure, a
 reversible loop, time travel, and verified compilation to a reversible circuit.

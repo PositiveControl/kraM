@@ -465,7 +465,7 @@ func loopCount(v ReversibleLoop, vals *Interp) (int, error) {
 		return 0, err
 	}
 	if !entry {
-		return 0, fmt.Errorf("loop entry assertion fails at compile time")
+		return 0, fmt.Errorf("loop entry condition is false in the current state — :gates/:verify compile from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
 	}
 	if _, err := Eval(v.Do, ip); err != nil {
 		return 0, err
