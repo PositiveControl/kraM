@@ -38,6 +38,8 @@ const (
 	PLUSEQ  // +=  reversible update
 	MINUSEQ // -=  reversible update
 	SWAP    // <=> reversible swap
+	ASSERT  // assert (reversible runtime check)
+	REVERSE // reverse { ... } (run a block's structural inverse)
 )
 
 type Token struct {
@@ -110,6 +112,10 @@ func kindName(k TokKind) string {
 		return "MINUSEQ"
 	case SWAP:
 		return "SWAP"
+	case ASSERT:
+		return "ASSERT"
+	case REVERSE:
+		return "REVERSE"
 	default:
 		return "ILLEGAL"
 	}
@@ -251,6 +257,10 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{ELSE, word, start})
 			case "while":
 				toks = append(toks, Token{WHILE, word, start})
+			case "assert":
+				toks = append(toks, Token{ASSERT, word, start})
+			case "reverse":
+				toks = append(toks, Token{REVERSE, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

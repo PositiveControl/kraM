@@ -33,7 +33,15 @@ type Block struct{ Stmts []Node }
 type If struct {
 	Cond, Then Node
 	Else       Node // nil when there is no else
+	Exit       Node // optional 'assert' exit condition; makes the if reversible
 }
+
+// Assert is a reversible runtime check: the condition must hold. Self-inverse.
+type Assert struct{ Cond Node }
+
+// Reverse runs the structural inverse of its body — backward execution derived
+// from program text, not from the undo log.
+type Reverse struct{ Body Node }
 type While struct {
 	Cond, Body Node
 }
@@ -57,6 +65,8 @@ func (Swap) node()           {}
 func (Block) node()     {}
 func (If) node()        {}
 func (While) node()     {}
+func (Assert) node()    {}
+func (Reverse) node()   {}
 func (Unary) node()     {}
 func (Binary) node()    {}
 
@@ -127,6 +137,12 @@ func (p *Parser) parseStmt() Node {
 		return Print{Value: p.parseExpr(0)}
 	case IF:
 		return p.parseIf()
+	case ASSERT:
+		p.advance()
+		return Assert{Cond: p.parseExpr(0)}
+	case REVERSE:
+		p.advance()
+		return Reverse{Body: p.parseBlock()}
 	case WHILE:
 		p.advance()
 		cond := p.parseExpr(0)
@@ -190,7 +206,13 @@ func (p *Parser) parseIf() Node {
 			els = p.parseBlock()
 		}
 	}
-	return If{Cond: cond, Then: then, Else: els}
+	// Optional exit assertion makes the if reversible: 'if c {..} else {..} assert e'.
+	var exit Node
+	if p.cur().Kind == ASSERT {
+		p.advance()
+		exit = p.parseExpr(0)
+	}
+	return If{Cond: cond, Then: then, Else: els, Exit: exit}
 }
 
 func (p *Parser) cur() Token { return p.toks[p.pos] }

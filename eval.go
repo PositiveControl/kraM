@@ -72,33 +72,57 @@ func Eval(n Node, ip *Interp) (Value, error) {
 	case Block:
 		return evalBlock(v, ip)
 	case If:
-		cond, err := Eval(v.Cond, ip)
+		taken, err := evalCond(v.Cond, ip, "if condition")
 		if err != nil {
 			return Value{}, err
 		}
-		if cond.Kind != BoolKind {
-			return Value{}, fmt.Errorf("if condition must be bool, got %s", cond.typeName())
+		var out Value
+		if taken {
+			out, err = Eval(v.Then, ip)
+		} else if v.Else != nil {
+			out, err = Eval(v.Else, ip)
 		}
-		if cond.Bool {
-			return Eval(v.Then, ip)
+		if err != nil {
+			return Value{}, err
 		}
-		if v.Else != nil {
-			return Eval(v.Else, ip)
+		// Reversible if: the exit assertion must equal which branch ran, so
+		// backward execution can recover the branch without a log.
+		if v.Exit != nil {
+			exit, err := evalCond(v.Exit, ip, "if exit assertion")
+			if err != nil {
+				return Value{}, err
+			}
+			if exit != taken {
+				return Value{}, fmt.Errorf("if exit assertion violated: %s-branch ran but exit is %v",
+					branchName(taken), exit)
+			}
+		}
+		return out, nil
+	case Assert:
+		ok, err := evalCond(v.Cond, ip, "assert")
+		if err != nil {
+			return Value{}, err
+		}
+		if !ok {
+			return Value{}, fmt.Errorf("assertion failed")
 		}
 		return nilVal(), nil
+	case Reverse:
+		inv, err := invert(v.Body)
+		if err != nil {
+			return Value{}, err
+		}
+		return Eval(inv, ip)
 	case While:
 		// ponytail: hard iteration cap so a runaway loop can't fill the undo
 		// history unbounded. Raise it / make it configurable if real programs hit it.
 		const maxIter = 1_000_000
 		for i := 0; ; i++ {
-			cond, err := Eval(v.Cond, ip)
+			cond, err := evalCond(v.Cond, ip, "while condition")
 			if err != nil {
 				return Value{}, err
 			}
-			if cond.Kind != BoolKind {
-				return Value{}, fmt.Errorf("while condition must be bool, got %s", cond.typeName())
-			}
-			if !cond.Bool {
+			if !cond {
 				return nilVal(), nil
 			}
 			if i >= maxIter {
@@ -121,6 +145,25 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		return evalBinary(v, ip)
 	}
 	return Value{}, fmt.Errorf("cannot evaluate %T", n)
+}
+
+// evalCond evaluates a node that must be a bool, naming the context on error.
+func evalCond(n Node, ip *Interp, ctx string) (bool, error) {
+	v, err := Eval(n, ip)
+	if err != nil {
+		return false, err
+	}
+	if v.Kind != BoolKind {
+		return false, fmt.Errorf("%s must be bool, got %s", ctx, v.typeName())
+	}
+	return v.Bool, nil
+}
+
+func branchName(taken bool) string {
+	if taken {
+		return "then"
+	}
+	return "else"
 }
 
 // evalBlock runs statements in order and yields the last value (nil if empty).
