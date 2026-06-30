@@ -20,6 +20,12 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		return val, nil
 	case Assign:
+		// First binding is reversible (undo just unsets it). Overwriting an
+		// existing value destroys information — the irreversible act — so warn
+		// and nudge toward the reversible updates (+= / -= / <=>).
+		if old, exists := ip.get(v.Name); exists {
+			ip.warn(fmt.Sprintf("destructive overwrite of %q (was %s) — irreversible; use += / -= / <=> to stay reversible", v.Name, old))
+		}
 		val, err := Eval(v.Value, ip)
 		if err != nil {
 			return Value{}, err

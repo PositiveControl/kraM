@@ -94,6 +94,8 @@ type Interp struct {
 	stepPending    string        // next op the parked evaluator will run
 	stepHasPending bool          // false once the program has drained
 	stepErr        error         // terminal error, if any
+
+	warnings []string // advisory messages from the last evaluation (not state)
 }
 
 func NewInterp() *Interp {
@@ -124,6 +126,18 @@ func (ip *Interp) set(name string, val Value) {
 
 func (ip *Interp) print(val Value) {
 	ip.do(printEdit{val: val})
+}
+
+// warn records an advisory message (e.g. a destructive overwrite). Warnings
+// are not program state — they are not reversible and not part of history; the
+// controller drains and prints them after each evaluation.
+func (ip *Interp) warn(msg string) { ip.warnings = append(ip.warnings, msg) }
+
+// DrainWarnings returns and clears pending advisories.
+func (ip *Interp) DrainWarnings() []string {
+	w := ip.warnings
+	ip.warnings = nil
+	return w
 }
 
 // incr applies a reversible `x += delta`. The caller guarantees name exists

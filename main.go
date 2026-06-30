@@ -42,6 +42,7 @@ func main() {
 					fmt.Println("step:", label)
 				}
 				reconcileOutput(ip, &shown)
+				printWarnings(ip)
 			case ":env", ":output", ":history", ":help":
 				runMeta(line, ip)
 			default:
@@ -80,6 +81,7 @@ func main() {
 			continue
 		}
 		reconcileOutput(ip, &shown)
+		printWarnings(ip)
 		if val.Kind != NilKind {
 			fmt.Println(val) // echo real results; print/empty-if produce nil and stay quiet
 		}
@@ -87,6 +89,12 @@ func main() {
 }
 
 func firstWord(line string) string { return strings.Fields(line)[0] }
+
+func printWarnings(ip *Interp) {
+	for _, w := range ip.DrainWarnings() {
+		fmt.Println("⚠", w)
+	}
+}
 
 // reconcileOutput renders the gap between the output buffer and what the
 // terminal has shown. Growth = new prints (emit them). Shrink = prints undone
