@@ -16,6 +16,7 @@ type Assign struct {
 	Name  string
 	Value Node
 }
+type Print struct{ Value Node }
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -29,6 +30,7 @@ func (NumberLit) node() {}
 func (BoolLit) node()   {}
 func (Var) node()       {}
 func (Assign) node()    {}
+func (Print) node()     {}
 func (Unary) node()     {}
 func (Binary) node()    {}
 
@@ -67,8 +69,12 @@ func Parse(src string) (Node, error) {
 	return n, nil
 }
 
-// parseStmt: `ident = expr` is assignment; anything else is a bare expression.
+// parseStmt: `print expr`, `ident = expr` (assignment), or a bare expression.
 func (p *Parser) parseStmt() Node {
+	if p.cur().Kind == PRINT {
+		p.advance()
+		return Print{Value: p.parseExpr(0)}
+	}
 	if p.cur().Kind == IDENT && p.toks[p.pos+1].Kind == ASSIGN {
 		name := p.advance().Lit
 		p.advance() // '='

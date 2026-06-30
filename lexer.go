@@ -24,6 +24,7 @@ const (
 	GE // >=
 	EQ // ==
 	NE // !=
+	PRINT
 )
 
 type Token struct {
@@ -74,6 +75,8 @@ func kindName(k TokKind) string {
 		return "EQ"
 	case NE:
 		return "NE"
+	case PRINT:
+		return "PRINT"
 	default:
 		return "ILLEGAL"
 	}
@@ -149,6 +152,8 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{TRUE, word, start})
 			case "false":
 				toks = append(toks, Token{FALSE, word, start})
+			case "print":
+				toks = append(toks, Token{PRINT, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

@@ -14,28 +14,60 @@ type binding struct {
 	exists bool
 }
 
-// edit is one reversible mutation: how a single variable looked before and
-// after. Undo applies `before`; redo applies `after`. This symmetry is the
-// whole trick — every state change knows how to walk itself in either
-// direction.
-type edit struct {
-	name   string
-	before binding
-	after  binding
+// reversible is one undoable operation. Every mutation in the language
+// implements this: redo walks state forward, undo walks it back, label
+// describes it for :history. Add a new mutation kind → implement reversible
+// and route it through Interp.do(), and time travel works for free.
+type reversible interface {
+	redo(*Interp)
+	undo(*Interp)
+	label() string
 }
 
+// varEdit captures a single variable's before/after. The symmetry (undo
+// applies before, redo applies after) is the whole trick.
+type varEdit struct {
+	name          string
+	before, after binding
+}
+
+func (e varEdit) redo(ip *Interp) { ip.applyBinding(e.name, e.after) }
+func (e varEdit) undo(ip *Interp) { ip.applyBinding(e.name, e.before) }
+func (e varEdit) label() string {
+	if !e.before.exists {
+		return fmt.Sprintf("%s = %s  (was unset)", e.name, e.after.val)
+	}
+	return fmt.Sprintf("%s = %s  (was %s)", e.name, e.after.val, e.before.val)
+}
+
+// printEdit makes output a reversible thing: redo appends to the buffer, undo
+// pops it. The physical terminal is append-only, but this buffer is the model
+// of truth — :output renders it at the current point in time.
+type printEdit struct{ val Value }
+
+func (e printEdit) redo(ip *Interp) { ip.output = append(ip.output, e.val) }
+func (e printEdit) undo(ip *Interp) { ip.output = ip.output[:len(ip.output)-1] }
+func (e printEdit) label() string   { return fmt.Sprintf("print %s", e.val) }
+
 // Interp holds all mutable program state plus the time-travel machinery.
-// Reversibility lives HERE and only here: every mutation goes through set(),
-// which logs its inverse. Add a new mutation kind later → route it through
-// set() and it is reversible for free.
+// Reversibility lives HERE and only here: every mutation goes through do().
 type Interp struct {
-	vars map[string]binding
-	past []edit // applied edits, newest last — the undo stack
-	fut  []edit // undone edits, newest last — the redo stack
+	vars   map[string]binding
+	output []Value      // reversible output buffer; terminal is just a view
+	past   []reversible // applied ops, newest last — the undo stack
+	fut    []reversible // undone ops, newest last — the redo stack
 }
 
 func NewInterp() *Interp {
 	return &Interp{vars: map[string]binding{}}
+}
+
+// do applies an operation forward and records it. A fresh mutation invalidates
+// the redo stack — you cannot redo into a future you have diverged from.
+func (ip *Interp) do(r reversible) {
+	r.redo(ip)
+	ip.past = append(ip.past, r)
+	ip.fut = nil
 }
 
 func (ip *Interp) get(name string) (Value, bool) {
@@ -46,44 +78,42 @@ func (ip *Interp) get(name string) (Value, bool) {
 	return b.val, true
 }
 
-// set mutates a variable and records the inverse so it can be undone. A fresh
-// mutation invalidates the redo stack — you cannot redo into a future you have
-// diverged from.
 func (ip *Interp) set(name string, val Value) {
 	before := ip.vars[name] // zero binding => {exists:false}, correct for new vars
-	after := binding{val: val, exists: true}
-	ip.vars[name] = after
-	ip.past = append(ip.past, edit{name: name, before: before, after: after})
-	ip.fut = nil
+	ip.do(varEdit{name: name, before: before, after: binding{val: val, exists: true}})
 }
 
-// Undo reverses the most recent mutation. Returns false if there is no history.
-func (ip *Interp) Undo() (edit, bool) {
+func (ip *Interp) print(val Value) {
+	ip.do(printEdit{val: val})
+}
+
+// Undo reverses the most recent operation. Returns false if there is no history.
+func (ip *Interp) Undo() (reversible, bool) {
 	if len(ip.past) == 0 {
-		return edit{}, false
+		return nil, false
 	}
-	e := ip.past[len(ip.past)-1]
+	r := ip.past[len(ip.past)-1]
 	ip.past = ip.past[:len(ip.past)-1]
-	ip.apply(e.name, e.before)
-	ip.fut = append(ip.fut, e)
-	return e, true
+	r.undo(ip)
+	ip.fut = append(ip.fut, r)
+	return r, true
 }
 
-// Redo re-applies the most recently undone mutation.
-func (ip *Interp) Redo() (edit, bool) {
+// Redo re-applies the most recently undone operation.
+func (ip *Interp) Redo() (reversible, bool) {
 	if len(ip.fut) == 0 {
-		return edit{}, false
+		return nil, false
 	}
-	e := ip.fut[len(ip.fut)-1]
+	r := ip.fut[len(ip.fut)-1]
 	ip.fut = ip.fut[:len(ip.fut)-1]
-	ip.apply(e.name, e.after)
-	ip.past = append(ip.past, e)
-	return e, true
+	r.redo(ip)
+	ip.past = append(ip.past, r)
+	return r, true
 }
 
-// apply forces a variable to a given binding without logging (undo/redo move
-// edits between stacks themselves; they must not record new history).
-func (ip *Interp) apply(name string, b binding) {
+// applyBinding forces a variable to a binding without logging (undo/redo move
+// ops between stacks themselves; they must not record new history).
+func (ip *Interp) applyBinding(name string, b binding) {
 	if b.exists {
 		ip.vars[name] = b
 	} else {
@@ -91,29 +121,20 @@ func (ip *Interp) apply(name string, b binding) {
 	}
 }
 
-// HistoryString renders the undo timeline, oldest first, marking the cursor
-// (everything above the line is undoable, everything below is redoable).
+// HistoryString renders the timeline, oldest first, marking the cursor.
 func (ip *Interp) HistoryString() string {
 	if len(ip.past) == 0 && len(ip.fut) == 0 {
 		return "(no history)"
 	}
 	var b strings.Builder
-	for i, e := range ip.past {
-		fmt.Fprintf(&b, "%2d  %s\n", i+1, describe(e))
+	for i, r := range ip.past {
+		fmt.Fprintf(&b, "%2d  %s\n", i+1, r.label())
 	}
 	b.WriteString("    --- now ---\n")
-	// fut is newest-last; show the next redo first
-	for i := len(ip.fut) - 1; i >= 0; i-- {
-		fmt.Fprintf(&b, "    %s  (undone)\n", describe(ip.fut[i]))
+	for i := len(ip.fut) - 1; i >= 0; i-- { // fut newest-last; show next redo first
+		fmt.Fprintf(&b, "    %s  (undone)\n", ip.fut[i].label())
 	}
 	return strings.TrimRight(b.String(), "\n")
-}
-
-func describe(e edit) string {
-	if !e.before.exists {
-		return fmt.Sprintf("%s = %s  (was unset)", e.name, e.after.val)
-	}
-	return fmt.Sprintf("%s = %s  (was %s)", e.name, e.after.val, e.before.val)
 }
 
 // EnvString lists current bindings, sorted for stable output.
@@ -131,6 +152,19 @@ func (ip *Interp) EnvString() string {
 	var b strings.Builder
 	for _, n := range names {
 		fmt.Fprintf(&b, "%s = %s\n", n, ip.vars[n].val)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// OutputString renders the output buffer as it stands now — the time-traveled
+// truth, regardless of what physically scrolled past in the terminal.
+func (ip *Interp) OutputString() string {
+	if len(ip.output) == 0 {
+		return "(no output)"
+	}
+	var b strings.Builder
+	for _, v := range ip.output {
+		fmt.Fprintln(&b, v)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

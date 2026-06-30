@@ -24,6 +24,13 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		ip.set(v.Name, val) // records the inverse for time travel
 		return val, nil
+	case Print:
+		val, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		ip.print(val) // output is reversible state, not a raw side effect
+		return val, nil
 	case Unary:
 		r, err := Eval(v.Right, ip)
 		if err != nil {
