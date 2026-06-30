@@ -10,6 +10,7 @@ import (
 type Node interface{ node() }
 
 type NumberLit struct{ Val float64 }
+type BoolLit struct{ Val bool }
 type Var struct{ Name string }
 type Assign struct {
 	Name  string
@@ -25,6 +26,7 @@ type Binary struct {
 }
 
 func (NumberLit) node() {}
+func (BoolLit) node()   {}
 func (Var) node()       {}
 func (Assign) node()    {}
 func (Unary) node()     {}
@@ -35,6 +37,12 @@ func (Binary) node()    {}
 // Binding power per infix operator. Higher binds tighter.
 // Add new operators here; the loop in parseExpr needs no changes.
 var infixBP = map[TokKind]int{
+	EQ:    5,
+	NE:    5,
+	LT:    7,
+	GT:    7,
+	LE:    7,
+	GE:    7,
 	PLUS:  10,
 	MINUS: 10,
 	STAR:  20,
@@ -107,6 +115,10 @@ func (p *Parser) parsePrefix() Node {
 		return NumberLit{Val: v}
 	case IDENT:
 		return Var{Name: t.Lit}
+	case TRUE:
+		return BoolLit{Val: true}
+	case FALSE:
+		return BoolLit{Val: false}
 	case MINUS:
 		return Unary{Op: MINUS, Right: p.parseExpr(30)} // unary binds tighter than * /
 	case LPAREN:

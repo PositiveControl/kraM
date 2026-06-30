@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -32,11 +31,6 @@ func main() {
 			fmt.Println("error:", err)
 			continue
 		}
-		fmt.Println(formatNum(val))
+		fmt.Println(val)
 	}
-}
-
-// formatNum prints whole numbers without a trailing ".0".
-func formatNum(f float64) string {
-	return strconv.FormatFloat(f, 'g', -1, 64)
 }

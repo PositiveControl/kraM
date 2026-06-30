@@ -18,8 +18,8 @@ type Value struct {
 	Bool bool
 }
 
-func numVal(f float64) Value  { return Value{Kind: NumKind, Num: f} }
-func boolVal(b bool) Value    { return Value{Kind: BoolKind, Bool: b} }
+func numVal(f float64) Value { return Value{Kind: NumKind, Num: f} }
+func boolVal(b bool) Value   { return Value{Kind: BoolKind, Bool: b} }
 
 func (v Value) typeName() string {
 	switch v.Kind {

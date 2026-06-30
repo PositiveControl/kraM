@@ -16,6 +16,14 @@ const (
 	RPAREN
 	IDENT
 	ASSIGN
+	TRUE
+	FALSE
+	LT // <
+	GT // >
+	LE // <=
+	GE // >=
+	EQ // ==
+	NE // !=
 )
 
 type Token struct {
@@ -50,6 +58,22 @@ func kindName(k TokKind) string {
 		return "IDENT"
 	case ASSIGN:
 		return "ASSIGN"
+	case TRUE:
+		return "TRUE"
+	case FALSE:
+		return "FALSE"
+	case LT:
+		return "LT"
+	case GT:
+		return "GT"
+	case LE:
+		return "LE"
+	case GE:
+		return "GE"
+	case EQ:
+		return "EQ"
+	case NE:
+		return "NE"
 	default:
 		return "ILLEGAL"
 	}
@@ -83,14 +107,51 @@ func Lex(src string) []Token {
 			toks = append(toks, Token{RPAREN, ")", i})
 			i++
 		case c == '=':
-			toks = append(toks, Token{ASSIGN, "=", i})
-			i++
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{EQ, "==", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{ASSIGN, "=", i})
+				i++
+			}
+		case c == '<':
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{LE, "<=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{LT, "<", i})
+				i++
+			}
+		case c == '>':
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{GE, ">=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{GT, ">", i})
+				i++
+			}
+		case c == '!':
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{NE, "!=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{ILLEGAL, "!", i})
+				i++
+			}
 		case isAlpha(c):
 			start := i
 			for i < len(src) && (isAlpha(src[i]) || isDigit(src[i])) {
 				i++
 			}
-			toks = append(toks, Token{IDENT, src[start:i], start})
+			word := src[start:i]
+			switch word {
+			case "true":
+				toks = append(toks, Token{TRUE, word, start})
+			case "false":
+				toks = append(toks, Token{FALSE, word, start})
+			default:
+				toks = append(toks, Token{IDENT, word, start})
+			}
 		case isDigit(c) || c == '.':
 			start := i
 			for i < len(src) && (isDigit(src[i]) || src[i] == '.') {
@@ -105,6 +166,13 @@ func Lex(src string) []Token {
 	}
 	toks = append(toks, Token{EOF, "", i})
 	return toks
+}
+
+func peek(src string, i int) byte {
+	if i < len(src) {
+		return src[i]
+	}
+	return 0
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
