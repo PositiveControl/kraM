@@ -1,17 +1,17 @@
-# kraMLang reversible cipher — encrypt and decrypt with the SAME operation.
-# XOR is its own inverse, so no separate "decrypt" code is needed, and no
-# information is ever lost.
+# kraMLang reversible cipher — one procedure, run forward to encrypt and
+# backward (uncall) to decrypt. XOR loses no information, so no separate
+# decrypt code is needed.
 
 key = 9999
 msg = 1337
+proc cipher { msg ^= key }
+
 print "message:   " + msg
 
-# encrypt
-msg ^= key
+call cipher
 print "encrypted: " + msg
 
-# decrypt — literally the same line again
-msg ^= key
+uncall cipher
 print "decrypted: " + msg
 
-print "recovered the original with the identical operation."
+print "encrypt and decrypt are the same procedure, run in opposite directions."

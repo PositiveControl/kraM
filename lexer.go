@@ -44,6 +44,9 @@ const (
 	LOOP    // loop (reversible loop step)
 	UNTIL   // until (reversible loop exit)
 	CARETEQ // ^= reversible XOR update (self-inverse, exact)
+	PROC    // proc (define a procedure)
+	CALL    // call (run a procedure forward)
+	UNCALL  // uncall (run a procedure backward)
 )
 
 type Token struct {
@@ -128,6 +131,12 @@ func kindName(k TokKind) string {
 		return "UNTIL"
 	case CARETEQ:
 		return "CARETEQ"
+	case PROC:
+		return "PROC"
+	case CALL:
+		return "CALL"
+	case UNCALL:
+		return "UNCALL"
 	default:
 		return "ILLEGAL"
 	}
@@ -291,6 +300,12 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{LOOP, word, start})
 			case "until":
 				toks = append(toks, Token{UNTIL, word, start})
+			case "proc":
+				toks = append(toks, Token{PROC, word, start})
+			case "call":
+				toks = append(toks, Token{CALL, word, start})
+			case "uncall":
+				toks = append(toks, Token{UNCALL, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

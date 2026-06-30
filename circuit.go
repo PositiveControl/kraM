@@ -99,6 +99,8 @@ func lower(n Node) ([]Gate, error) {
 		return nil, fmt.Errorf("print is irreversible I/O — no gate exists")
 	case If, While, ReversibleLoop, Reverse:
 		return nil, fmt.Errorf("control flow is not lowered yet — straight-line reversible updates only")
+	case ProcDef, Call, Uncall:
+		return nil, fmt.Errorf("procedures are not lowered yet — inline the body to compile")
 	}
 	return nil, fmt.Errorf("cannot lower %T to a gate", n)
 }

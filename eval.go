@@ -136,6 +136,25 @@ func Eval(n Node, ip *Interp) (Value, error) {
 			return Value{}, err
 		}
 		return Eval(inv, ip)
+	case ProcDef:
+		ip.procs[v.Name] = v.Body // a definition, not state — not logged
+		return nilVal(), nil
+	case Call:
+		body, ok := ip.procs[v.Name]
+		if !ok {
+			return Value{}, fmt.Errorf("undefined procedure %q", v.Name)
+		}
+		return Eval(body, ip)
+	case Uncall:
+		body, ok := ip.procs[v.Name]
+		if !ok {
+			return Value{}, fmt.Errorf("undefined procedure %q", v.Name)
+		}
+		inv, err := invert(body)
+		if err != nil {
+			return Value{}, fmt.Errorf("cannot uncall %q: %w", v.Name, err)
+		}
+		return Eval(inv, ip)
 	case ReversibleLoop:
 		return evalReversibleLoop(v, ip)
 	case While:

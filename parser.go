@@ -61,6 +61,16 @@ type ReversibleLoop struct {
 type While struct {
 	Cond, Body Node
 }
+
+// ProcDef defines a procedure operating on shared variables (no parameters).
+type ProcDef struct {
+	Name string
+	Body Node
+}
+
+// Call runs a procedure forward; Uncall runs its structural inverse.
+type Call struct{ Name string }
+type Uncall struct{ Name string }
 type Unary struct {
 	Op    TokKind // MINUS
 	Right Node
@@ -82,6 +92,9 @@ func (XorAssign) node()      {}
 func (Block) node()          {}
 func (If) node()             {}
 func (While) node()          {}
+func (ProcDef) node()        {}
+func (Call) node()           {}
+func (Uncall) node()         {}
 func (Assert) node()         {}
 func (Reverse) node()        {}
 func (ReversibleLoop) node() {}
@@ -161,6 +174,28 @@ func (p *Parser) parseStmt() Node {
 	case REVERSE:
 		p.advance()
 		return Reverse{Body: p.parseBlock()}
+	case PROC:
+		p.advance()
+		if p.cur().Kind != IDENT {
+			p.fail("expected procedure name, got %s", p.cur())
+			return nil
+		}
+		name := p.advance().Lit
+		return ProcDef{Name: name, Body: p.parseBlock()}
+	case CALL:
+		p.advance()
+		if p.cur().Kind != IDENT {
+			p.fail("expected procedure name after 'call', got %s", p.cur())
+			return nil
+		}
+		return Call{Name: p.advance().Lit}
+	case UNCALL:
+		p.advance()
+		if p.cur().Kind != IDENT {
+			p.fail("expected procedure name after 'uncall', got %s", p.cur())
+			return nil
+		}
+		return Uncall{Name: p.advance().Lit}
 	case FROM:
 		p.advance()
 		entry := p.parseExpr(0)

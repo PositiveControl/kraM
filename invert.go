@@ -40,6 +40,11 @@ func invert(n Node) (Node, error) {
 	case Assert:
 		return v, nil // self-inverse: the check is the same backward
 
+	case Call:
+		return Uncall{Name: v.Name}, nil // running a proc backward
+	case Uncall:
+		return Call{Name: v.Name}, nil
+
 	case If:
 		// Reversible iff it carries an exit assertion. Inverting swaps the
 		// entry condition and the exit assertion (so the exit now selects the

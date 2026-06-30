@@ -117,10 +117,11 @@ type Interp struct {
 	cfDepth  int       // control-flow nesting; only depth-1 statements emit a note
 	strict   bool      // when true, destructive overwrite is an error, not a warning
 	last     Value     // last non-nil result; read by the bare identifier '_'
+	procs    map[string]Node // procedure definitions (name -> body); not state, not logged
 }
 
 func NewInterp() *Interp {
-	return &Interp{vars: map[string]binding{}}
+	return &Interp{vars: map[string]binding{}, procs: map[string]Node{}}
 }
 
 // do applies an operation forward and records it. A fresh mutation invalidates
@@ -138,6 +139,9 @@ func (ip *Interp) clone() *Interp {
 	c := NewInterp()
 	for k, v := range ip.vars {
 		c.vars[k] = v
+	}
+	for k, p := range ip.procs {
+		c.procs[k] = p
 	}
 	c.strict = ip.strict
 	return c
@@ -192,6 +196,7 @@ func (ip *Interp) Reset() {
 	ip.warnings = nil
 	ip.notes = nil
 	ip.last = Value{}
+	ip.procs = map[string]Node{}
 }
 
 // incr applies a reversible `x += delta`. The caller guarantees name exists

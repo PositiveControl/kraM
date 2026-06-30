@@ -63,6 +63,12 @@ func format(n Node) string {
 			" loop " + format(v.Rest) + " until " + format(v.Exit)
 	case Reverse:
 		return "reverse " + format(v.Body)
+	case ProcDef:
+		return "proc " + v.Name + " " + format(v.Body)
+	case Call:
+		return "call " + v.Name
+	case Uncall:
+		return "uncall " + v.Name
 	}
 	return "<?>"
 }
