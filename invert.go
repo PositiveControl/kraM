@@ -77,6 +77,8 @@ func invert(n Node) (Node, error) {
 		return nil, fmt.Errorf("cannot reverse print (irreversible output)")
 	case While:
 		return nil, fmt.Errorf("classic while is not reversible; use from/loop/until")
+	case NumberLit, StrLit, BoolLit, Var, Binary, Unary:
+		return nil, fmt.Errorf("cannot reverse an expression — it computes a value but changes no state; reverse needs reversible updates (+= -= ^= <=>)")
 	}
 	return nil, fmt.Errorf("cannot reverse %T", n)
 }
