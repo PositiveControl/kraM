@@ -56,6 +56,16 @@ type Interp struct {
 	output []Value      // reversible output buffer; terminal is just a view
 	past   []reversible // applied ops, newest last — the undo stack
 	fut    []reversible // undone ops, newest last — the redo stack
+
+	// Stepping machinery (see stepper.go). When stepping, do() pauses before
+	// each mutation until the controller grants the next step.
+	stepping       bool
+	gateIn         chan string   // eval -> controller: label of the op about to run
+	gateOut        chan struct{} // controller -> eval: permission to run it
+	stepDone       chan error    // eval -> controller: program finished
+	stepPending    string        // next op the parked evaluator will run
+	stepHasPending bool          // false once the program has drained
+	stepErr        error         // terminal error, if any
 }
 
 func NewInterp() *Interp {
@@ -65,6 +75,7 @@ func NewInterp() *Interp {
 // do applies an operation forward and records it. A fresh mutation invalidates
 // the redo stack — you cannot redo into a future you have diverged from.
 func (ip *Interp) do(r reversible) {
+	ip.gate(r.label()) // when stepping, pause here until the next :step
 	r.redo(ip)
 	ip.past = append(ip.past, r)
 	ip.fut = nil
