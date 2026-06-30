@@ -140,7 +140,7 @@ func TestBitCircuitMatchesInterpreter(t *testing.T) {
 			t.Fatalf("eval %q: %v", progSrc, err)
 		}
 
-		bc, err := compileBits(progAst)
+		bc, err := compileBits(progAst, nil)
 		if err != nil {
 			t.Fatalf("compileBits %q: %v", progSrc, err)
 		}

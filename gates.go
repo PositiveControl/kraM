@@ -36,17 +36,23 @@ func (g BitGate) String() string {
 // bitCircuit is a compiled elementary-gate program plus its wire layout.
 type bitCircuit struct {
 	gates  []BitGate
-	base   map[string]int // var -> index of its bit 0
+	base   map[string]int  // var -> index of its bit 0
 	nwires int
+	procs  map[string]Node // procedure bodies, for inlining call/uncall
 }
 
-// compileBits lowers a straight-line reversible program to elementary gates
-// over {X, CNOT, Toffoli}. Each variable is a bitWidth-bit little-endian
-// register; ancillas (carry bits, constant registers) are allocated as needed
-// and always returned to zero, so they are reusable scratch.
-func compileBits(n Node) (*bitCircuit, error) {
-	c := &bitCircuit{base: map[string]int{}}
-	for _, name := range collectVars(n) {
+// compileBits lowers a reversible program to elementary gates over
+// {X, CNOT, Toffoli}. Each variable is a bitWidth-bit little-endian register;
+// ancillas (carry bits, constant/condition registers) are allocated as needed
+// and always returned to zero, so they are reusable scratch. procs supplies
+// procedure definitions for inlining call/uncall (nil if none).
+func compileBits(n Node, procs map[string]Node) (*bitCircuit, error) {
+	c := &bitCircuit{base: map[string]int{}, procs: map[string]Node{}}
+	for k, v := range procs {
+		c.procs[k] = v
+	}
+	registerProcs(n, c.procs) // pick up procs defined within the program too
+	for _, name := range collectVars(n, c.procs) {
 		c.base[name] = c.nwires
 		c.nwires += bitWidth
 	}
@@ -54,6 +60,18 @@ func compileBits(n Node) (*bitCircuit, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// registerProcs records every ProcDef in the program into procs.
+func registerProcs(n Node, procs map[string]Node) {
+	switch v := n.(type) {
+	case Block:
+		for _, s := range v.Stmts {
+			registerProcs(s, procs)
+		}
+	case ProcDef:
+		procs[v.Name] = v.Body
+	}
 }
 
 // reg returns the wire indices (bit 0 .. bitWidth-1) for a variable.
@@ -106,8 +124,28 @@ func (c *bitCircuit) emit(n Node) error {
 			c.cnot(x[i], y[i])
 		}
 		return nil
+	case ProcDef:
+		return nil // definition only — registered in compileBits, emits nothing
+	case Call:
+		body, ok := c.procs[v.Name]
+		if !ok {
+			return fmt.Errorf("undefined procedure %q", v.Name)
+		}
+		return c.emit(body)
+	case Uncall:
+		body, ok := c.procs[v.Name]
+		if !ok {
+			return fmt.Errorf("undefined procedure %q", v.Name)
+		}
+		inv, err := invert(body)
+		if err != nil {
+			return fmt.Errorf("cannot uncall %q: %w", v.Name, err)
+		}
+		return c.emit(inv)
+	case While, ReversibleLoop:
+		return fmt.Errorf("loops have data-dependent bounds — not a fixed circuit; unroll to straight-line code")
 	}
-	return fmt.Errorf("cannot compile %T to elementary gates (straight-line += -= ^= <=> only)", n)
+	return fmt.Errorf("cannot compile %T to elementary gates", n)
 }
 
 func (c *bitCircuit) emitXor(v XorAssign) error {
@@ -228,9 +266,9 @@ func simulateBits(gates []BitGate, nwires int, init []bool) []bool {
 	return bits
 }
 
-// collectVars returns, in first-appearance order, the variable names a
-// straight-line program reads or writes.
-func collectVars(n Node) []string {
+// collectVars returns, in first-appearance order, the variable names a program
+// reads or writes — descending into branches and inlined procedures.
+func collectVars(n Node, procs map[string]Node) []string {
 	var order []string
 	seen := map[string]bool{}
 	add := func(name string) {
@@ -239,7 +277,13 @@ func collectVars(n Node) []string {
 			order = append(order, name)
 		}
 	}
+	calling := map[string]bool{} // guard against recursive procs
 	var walk func(Node)
+	addExpr := func(e Node) {
+		if y, ok := e.(Var); ok {
+			add(y.Name)
+		}
+	}
 	walk = func(n Node) {
 		switch v := n.(type) {
 		case Block:
@@ -248,19 +292,46 @@ func collectVars(n Node) []string {
 			}
 		case XorAssign:
 			add(v.Name)
-			if y, ok := v.Value.(Var); ok {
-				add(y.Name)
-			}
+			addExpr(v.Value)
 		case CompoundAssign:
 			add(v.Name)
-			if y, ok := v.Value.(Var); ok {
-				add(y.Name)
-			}
+			addExpr(v.Value)
 		case Swap:
 			add(v.A)
 			add(v.B)
+		case If:
+			collectCondVars(v.Cond, add)
+			walk(v.Then)
+			if v.Else != nil {
+				walk(v.Else)
+			}
+		case Call:
+			if body, ok := procs[v.Name]; ok && !calling[v.Name] {
+				calling[v.Name] = true
+				walk(body)
+				calling[v.Name] = false
+			}
+		case Uncall:
+			if body, ok := procs[v.Name]; ok && !calling[v.Name] {
+				calling[v.Name] = true
+				walk(body)
+				calling[v.Name] = false
+			}
 		}
 	}
 	walk(n)
 	return order
+}
+
+// collectCondVars adds the variables referenced in a condition expression.
+func collectCondVars(n Node, add func(string)) {
+	switch v := n.(type) {
+	case Var:
+		add(v.Name)
+	case Binary:
+		collectCondVars(v.Left, add)
+		collectCondVars(v.Right, add)
+	case Unary:
+		collectCondVars(v.Right, add)
+	}
 }
