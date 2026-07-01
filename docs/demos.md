@@ -127,3 +127,55 @@ backward and reconstructs both inputs from the single gcd value.
 being sorted/reduced (the `if` modifies the values its own condition reads), and
 `gcd.kr`'s loop length is genuinely data-dependent — neither has a fixed wiring.
 The reversibility itself (via `uncall`) holds in all four.
+
+---
+
+## Language features
+
+A reference for what the demos draw on.
+
+**Values** — numbers, booleans, strings, `nil`, and arrays (`[1, 2, 3]`, nested,
+indexed `a[i]`, bounds-checked).
+
+**Expressions** — `+ - * /`, comparisons `< > <= >= == !=` (equality across
+types), string concat with `+`, and boolean `&&` `||` `!` (short-circuit, so
+`i < len && a[i] > 0` is a safe guard).
+
+**Reversible updates** (information-preserving, the building blocks of every
+demo):
+- `x += e` / `x -= e` — add/subtract
+- `x ^= e` — XOR (exact, self-inverse)
+- `a <=> b` / `a[i] <=> a[j]` — swap (self-inverse)
+
+**Destructive (irreversible) operations** warn, and error under `:strict`:
+- `x = e` overwriting an existing value, `a[i] = e`, `print` (output)
+
+**Control flow**
+- `if c { … } else { … }` / `else if`, with strict boolean conditions
+- `while c { … }` — classic (irreversible) loop
+- `from e1 { … } loop { … } until e2` — reversible Janus loop
+- `assert c` — reversible runtime check
+- `if c { … } else { … } assert exit` — reversible if (the exit assertion
+  records which branch ran, so it inverts without a log)
+
+**Procedures** — `proc name(params) { … }`, called `call name(args)` /
+`uncall name(args)`; parameters are by-reference. `uncall` runs the inverse.
+
+**Local scope** — `local x = e` introduces a scoped temporary, `delocal x = e`
+removes it (asserting its value). Exact inverses, so a temporary stays
+reversible; in circuits a local is an ancilla register.
+
+**Reverse / invert** — `reverse { … }` runs a block's structural inverse;
+`:invert CODE` prints it.
+
+**REPL & tooling** — `:undo` `:redo` `:history` `:step` (time travel), `:env`
+`:output`, `:circuit` / `:gates` / `:verify` (compile to and check reversible
+gate circuits), `:strict`, `:reset`. Shorthands `_` (last result) and `!!`
+(last line).
+
+**Circuit lowering** reaches: reversible updates, swaps, constant- and
+loop-folded-index array elements, procedures (inlined), `local` (→ ancilla),
+unrolled loops, and reversible `if`s whose condition is a comparison or any
+`&& || !` combination of comparisons. Not lowered: genuinely dynamic array
+indices, data-dependent loop lengths, and branches that modify their own
+condition variable.
