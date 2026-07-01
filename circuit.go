@@ -95,11 +95,13 @@ func lower(n Node) ([]Gate, error) {
 		return []Gate{{Op: "ASSERT", Operand: v.Cond, Note: "classical check, not a physical gate"}}, nil
 
 	case Assign:
-		return nil, fmt.Errorf("destructive assignment of %q is irreversible — no gate exists", v.Name)
+		// Fresh initialisation from a zero register is the same as XOR-ing the
+		// value in (0 ^ k == k), so it lowers to the same X / CNOT prep gates.
+		return lower(XorAssign{Name: v.Name, Value: v.Value})
 	case Forget:
 		return nil, fmt.Errorf("forget %q is irreversible erasure — no gate exists", v.Name)
 	case Print:
-		return nil, fmt.Errorf("print is irreversible I/O — no gate exists")
+		return nil, nil // I/O has no register effect — the circuit simply omits it
 	case If, While, ReversibleLoop, Reverse:
 		return nil, fmt.Errorf("control flow is not lowered yet — straight-line reversible updates only")
 	case ProcDef, Call, Uncall:

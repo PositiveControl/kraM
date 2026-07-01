@@ -50,13 +50,27 @@ type bitCircuit struct {
 // and always returned to zero, so they are reusable scratch. procs supplies
 // procedure definitions for inlining call/uncall (nil if none).
 func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
-	c := &bitCircuit{base: map[string]int{}, procs: map[string]ProcDef{}, vals: ip}
+	// Compile against a *clone* of the live state: emitting a program advances a
+	// shadow (init assignments set variables, so a following loop unrolls from the
+	// right values) without mutating the caller's interpreter.
+	var vals *Interp
+	if ip != nil {
+		vals = ip.clone()
+	}
+	c := &bitCircuit{base: map[string]int{}, procs: map[string]ProcDef{}, vals: vals}
 	if ip != nil {
 		for k, v := range ip.procs {
 			c.procs[k] = v
 		}
 	}
 	registerProcs(n, c.procs) // pick up procs defined within the program too
+	// The unroll shadow (c.vals) executes bodies to advance state; give it the
+	// program's procedures so a `call` inside a loop resolves during unrolling.
+	if c.vals != nil {
+		for name, p := range c.procs {
+			c.vals.procs[name] = p
+		}
+	}
 	for _, name := range collectVars(n, c.procs) {
 		c.base[name] = c.nwires
 		c.nwires += bitWidth
@@ -168,6 +182,45 @@ func (c *bitCircuit) emit(n Node) error {
 		return fmt.Errorf("destructive element assignment is irreversible — use += / -= / ^= / <=>")
 	case Forget:
 		return fmt.Errorf("forget %q is irreversible erasure — no gate exists", v.Name)
+	case Assign:
+		// Fresh initialisation lowers to register preparation: set the (zero)
+		// register to the value — X the constant's set bits, or CNOT-copy another
+		// register — then advance the shadow state so a following loop unrolls
+		// from the right start values. Reassignment is irreversible, so rejected.
+		if c.vals != nil {
+			if _, exists := c.vals.get(v.Name); exists {
+				return fmt.Errorf("cannot reassign %q in a circuit — '=' introduces a fresh register; use += / -= / ^= / <=> (:reset first if it is only left over from a previous run)", v.Name)
+			}
+		}
+		base, ok := c.base[v.Name]
+		if !ok {
+			wires := c.allocReg()
+			c.base[v.Name] = wires[0]
+			base = wires[0]
+		}
+		wires := make([]int, bitWidth)
+		for i := range wires {
+			wires[i] = base + i
+		}
+		if err := c.initReg(wires, v.Value); err != nil {
+			return err
+		}
+		if c.vals != nil {
+			val, err := Eval(v.Value, c.vals)
+			if err != nil {
+				return err
+			}
+			c.vals.set(v.Name, val)
+		}
+		return nil
+	case Reverse:
+		inv, err := invert(v.Body)
+		if err != nil {
+			return err
+		}
+		return c.emit(inv)
+	case Print:
+		return nil // I/O has no register effect — omitted from the circuit
 	case Local:
 		// A local is an ancilla register: allocate it, initialise to its value.
 		wires := c.allocReg()

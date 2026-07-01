@@ -158,6 +158,10 @@ func kramCompile(src, mode string) string {
 	if err != nil {
 		return marshal(map[string]any{"ok": false, "error": "parse error: " + err.Error()})
 	}
+	// Compile against a fresh interpreter, not the live studio state: a program
+	// now carries its own `=` initialisation, so it lowers self-contained. This
+	// makes the compile buttons one-click regardless of what has been run/undone.
+	env := NewInterp()
 	var text string
 	switch mode {
 	case "circuit":
@@ -169,7 +173,7 @@ func kramCompile(src, mode string) string {
 			text += fmt.Sprintf("%d  %s\n", i+1, g)
 		}
 	case "gates":
-		bc, e := compileBits(ast, studio)
+		bc, e := compileBits(ast, env)
 		if e != nil {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}
@@ -183,7 +187,7 @@ func kramCompile(src, mode string) string {
 		}
 		text = format(inv)
 	case "verify":
-		rep, e := verify(ast, studio)
+		rep, e := verify(ast, env)
 		if e != nil {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}
