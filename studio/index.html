@@ -141,7 +141,12 @@ a <=> b`,
 h = 8
 o = 0
 g = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`,
-  "CA · 2. step generation (Run repeatedly, then scrub back)": `# Margolus block-rotation: rotate every 2x2 block at offset o, then flip o.
+  "CA · 2. step generation — SEED WITH CA 1 FIRST, then Run (not compilable alone)": `# Run "CA 1" first to seed g/w/h/o, THEN Run this repeatedly to advance the
+# grid, and scrub the timeline back to un-mix it. This is the generation body
+# only — it reads the seeded state, so it has nothing to compile on its own
+# (:gates/:verify need a whole program: use "CA 3", which fuses seed + one gen).
+#
+# Margolus block-rotation: rotate every 2x2 block at offset o, then flip o.
 # every move is a swap -> drag the timeline back to un-mix the grid exactly.
 local by = o
 from by == o { } loop {
