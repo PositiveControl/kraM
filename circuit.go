@@ -93,10 +93,15 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 		}
 
 	case Swap:
-		if v.AI != nil || v.BI != nil {
-			return nil, fmt.Errorf("indexed element swap is not lowered at the register level (arrays need per-element registers) — use :gates")
+		a, err := locName(v.A, v.AI, ip)
+		if err != nil {
+			return nil, err
 		}
-		return []Gate{{Op: "SWAP", A: v.A, B: v.B,
+		b, err := locName(v.B, v.BI, ip)
+		if err != nil {
+			return nil, err
+		}
+		return []Gate{{Op: "SWAP", A: a, B: b,
 			Note: "3 CNOTs per bit (Fredkin-style)"}}, nil
 
 	case CompoundAssign:
@@ -111,20 +116,29 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 		return []Gate{{Op: "ASSERT", Operand: v.Cond, Note: "classical check, not a physical gate"}}, nil
 
 	case Assign:
-		if _, isArr := v.Value.(ArrayLit); isArr {
-			return nil, fmt.Errorf("array-literal initialisation is not lowered at the register level (arrays need per-element registers) — use :gates")
-		}
-		// Fresh initialisation from a zero register is the same as XOR-ing the
-		// value in (0 ^ k == k), so it lowers to the same X / CNOT prep gates.
-		// Advance the shadow so a following loop unrolls from the right values.
-		gs, err := lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
-		if err != nil {
-			return nil, err
+		// An array literal prepares one register per element (elemKey); a scalar
+		// XORs its value into a zero register (0 ^ k == k). Advance the shadow so
+		// element indices fold and a following loop unrolls from the right values.
+		var gates []Gate
+		if arr, isArr := v.Value.(ArrayLit); isArr {
+			for i, e := range arr.Elems {
+				gs, err := lower(XorAssign{Name: elemKey(v.Name, i), Value: e}, ip)
+				if err != nil {
+					return nil, err
+				}
+				gates = append(gates, gs...)
+			}
+		} else {
+			gs, err := lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
+			if err != nil {
+				return nil, err
+			}
+			gates = gs
 		}
 		if err := advance(v, ip); err != nil {
 			return nil, err
 		}
-		return gs, nil
+		return gates, nil
 
 	case Local:
 		// A scoped temporary — at register level it prepares its register like
@@ -185,6 +199,31 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 		return lower(inv, ip)
 	}
 	return nil, fmt.Errorf("cannot lower %T to a gate", n)
+}
+
+// locName resolves an lvalue to a register name at the register level: a plain
+// variable is itself; an indexed element folds to the elemKey `name[k]` using
+// the shadow state (so a loop-varying index like xs[n-1-i] names the right
+// element each unrolled pass).
+func locName(name string, idx Node, ip *Interp) (string, error) {
+	if idx == nil {
+		return name, nil
+	}
+	if ip == nil {
+		return "", fmt.Errorf("array index must be a compile-time constant (compile from known state)")
+	}
+	v, err := Eval(idx, ip.clone())
+	if err != nil {
+		return "", fmt.Errorf("cannot fold array index: %w", err)
+	}
+	k, err := asInt(v, "array index")
+	if err != nil {
+		return "", err
+	}
+	if k < 0 {
+		return "", fmt.Errorf("negative array index %d", k)
+	}
+	return elemKey(name, int(k)), nil
 }
 
 // advance runs a statement on the shadow interpreter to move its state forward,

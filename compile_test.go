@@ -118,10 +118,16 @@ print a`,
 
 	// --- programs that MUST fail, with the reason pinned ---
 
-	// array-literal initialisation is not lowered (a literal isn't one register).
-	// NOTE: array *element* ops do lower when the array is already in state.
+	// array-literal init prepares one register per element; element ops then
+	// lower against those. A whole array program compiles from cold.
 	"array-init": `g = [1, 0, 0, 1]
 g[0] <=> g[3]`,
+
+	// reverse.kr shape: seed an array, swap ends across an unrolled loop.
+	"array-reverse": `xs = [1, 2, 3, 4, 5, 6]
+n = 6
+i = 0
+from i == 0 { } loop { xs[i] <=> xs[n - 1 - i]; i += 1 } until i == 3`,
 
 	// nested reversible loops cannot be unrolled (the inner loop differs per
 	// outer iteration) — this is the CA "step generation" shape.
@@ -154,7 +160,8 @@ func TestCompileMatrix(t *testing.T) {
 		{"reversible-if", "OK", "err:does not lower a reversible if", "has:MATCH", "has:Landauer", ""},
 		{"init-and-print", "OK", "OK", "has:MATCH", "has:Landauer", "OK"},
 
-		{"array-init", "err:operand must be a constant", "err:array-literal initialisation is not lowered", "err:operand must be a constant", "err:operand must be a constant", ""},
+		{"array-init", "OK", "OK", "has:MATCH", "has:Landauer", ""},
+		{"array-reverse", "OK", "OK", "has:MATCH", "has:Landauer", ""},
 		{"nested-loops", "err:nested loops cannot be unrolled", "err:nested loops cannot be unrolled", "err:nested loops", "err:nested loops", ""},
 		{"forget", "err:irreversible erasure", "err:irreversible erasure", "err:irreversible erasure", "err:irreversible erasure", "err:cannot reverse forget"},
 		{"reassign", "err:cannot reassign", "", "", "", ""},

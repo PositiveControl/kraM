@@ -192,18 +192,29 @@ func (c *bitCircuit) emit(n Node) error {
 				return fmt.Errorf("cannot reassign %q in a circuit — '=' introduces a fresh register; use += / -= / ^= / <=> (:reset first if it is only left over from a previous run)", v.Name)
 			}
 		}
-		base, ok := c.base[v.Name]
-		if !ok {
-			wires := c.allocReg()
-			c.base[v.Name] = wires[0]
-			base = wires[0]
-		}
-		wires := make([]int, bitWidth)
-		for i := range wires {
-			wires[i] = base + i
-		}
-		if err := c.initReg(wires, v.Value); err != nil {
-			return err
+		// An array literal prepares one register per element (arrays have no single
+		// register); a scalar prepares its own register. Either way, advance the
+		// shadow so later element indices fold and a following loop unrolls.
+		if arr, isArr := v.Value.(ArrayLit); isArr {
+			for i, e := range arr.Elems {
+				if err := c.initReg(c.elemReg(v.Name, i), e); err != nil {
+					return err
+				}
+			}
+		} else {
+			base, ok := c.base[v.Name]
+			if !ok {
+				wires := c.allocReg()
+				c.base[v.Name] = wires[0]
+				base = wires[0]
+			}
+			wires := make([]int, bitWidth)
+			for i := range wires {
+				wires[i] = base + i
+			}
+			if err := c.initReg(wires, v.Value); err != nil {
+				return err
+			}
 		}
 		if c.vals != nil {
 			val, err := Eval(v.Value, c.vals)
