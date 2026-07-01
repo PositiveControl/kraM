@@ -33,6 +33,7 @@ func main() {
 	reg("kramGates", func(a []js.Value) any { return kramCompile(a[0].String(), "gates") })
 	reg("kramInvert", func(a []js.Value) any { return kramCompile(a[0].String(), "invert") })
 	reg("kramVerify", func(a []js.Value) any { return kramCompile(a[0].String(), "verify") })
+	reg("kramEnergy", func(a []js.Value) any { return kramCompile(a[0].String(), "energy") })
 	select {} // keep the instance alive for callbacks
 }
 
@@ -184,6 +185,12 @@ func kramCompile(src, mode string) string {
 		text = format(inv)
 	case "verify":
 		rep, e := verify(ast, studio)
+		if e != nil {
+			return marshal(map[string]any{"ok": false, "error": e.Error()})
+		}
+		text = rep
+	case "energy":
+		rep, e := energyReport(ast, studio)
 		if e != nil {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}
