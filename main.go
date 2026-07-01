@@ -167,7 +167,7 @@ func main() {
 				fmt.Println("parse error:", err)
 				continue
 			}
-			inv, err := invert(ast)
+			inv, err := invertTop(ast)
 			if err != nil {
 				fmt.Println("not reversible:", err)
 				continue

@@ -103,9 +103,9 @@ func lower(n Node) ([]Gate, error) {
 	case Print:
 		return nil, nil // I/O has no register effect — the circuit simply omits it
 	case If, While, ReversibleLoop, Reverse:
-		return nil, fmt.Errorf("control flow is not lowered yet — straight-line reversible updates only")
+		return nil, fmt.Errorf(":circuit is a straight-line register view and does not unroll control flow — use :gates for loops/if (it unrolls and inlines)")
 	case ProcDef, Call, Uncall:
-		return nil, fmt.Errorf("procedures are not lowered yet — inline the body to compile")
+		return nil, fmt.Errorf(":circuit does not inline procedures — use :gates (it inlines and unrolls)")
 	}
 	return nil, fmt.Errorf("cannot lower %T to a gate", n)
 }

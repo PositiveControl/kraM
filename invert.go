@@ -10,6 +10,41 @@ import "fmt"
 //
 // Expressions inside statements (deltas, conditions, assertions) are pure reads
 // and are reused unchanged; only the statements that mutate state are inverted.
+// invertTop inverts a whole program for display (the `:invert` command).
+// Procedure definitions and `=` initialisation are the program's setup — they
+// have no inverse of their own — so they carry through unchanged as a prelude,
+// followed by the structural inverse of the reversible body. That is what a user
+// wants to see: how to run the computation backward from the same start state.
+// invert() itself (used by reverse{} / uncall) is left strict on purpose.
+func invertTop(n Node) (Node, error) {
+	b, ok := n.(Block)
+	if !ok {
+		return invert(n)
+	}
+	var setup, body []Node
+	for _, s := range b.Stmts {
+		switch s.(type) {
+		case ProcDef, Assign:
+			setup = append(setup, s) // program setup — carries through as a prelude
+		case Print:
+			// output has no inverse; omit it from the displayed backward program
+		default:
+			body = append(body, s)
+		}
+	}
+	inv, err := invert(Block{Stmts: body})
+	if err != nil {
+		return nil, err
+	}
+	out := append([]Node{}, setup...)
+	if ib, ok := inv.(Block); ok {
+		out = append(out, ib.Stmts...)
+	} else {
+		out = append(out, inv)
+	}
+	return Block{Stmts: out}, nil
+}
+
 func invert(n Node) (Node, error) {
 	switch v := n.(type) {
 	case Block:
@@ -93,7 +128,9 @@ func invert(n Node) (Node, error) {
 	case Forget:
 		return nil, fmt.Errorf("cannot reverse forget %q — erasure is deliberately irreversible", v.Name)
 	case Assign:
-		return nil, fmt.Errorf("cannot reverse destructive assignment of %q; use += / -= / <=>", v.Name)
+		return nil, fmt.Errorf("`%s = ...` is initialisation — it has no structural inverse; :invert / reverse the reversible body (updates, swaps, loops), not the setup", v.Name)
+	case ProcDef:
+		return nil, fmt.Errorf("a `proc` definition has no inverse — :invert / reverse the calls, not the definition")
 	case IdxAssign:
 		return nil, fmt.Errorf("cannot reverse destructive assignment of %s[..]; use += / -= / ^= / <=>", v.Name)
 	case Print:

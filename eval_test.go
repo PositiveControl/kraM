@@ -101,7 +101,7 @@ func TestEvalErrors(t *testing.T) {
 		{"if 1 { 2 }", "must be bool"},
 		{"x = 1.5; x ^= 1", "whole number"},
 		{"_ = 5", "cannot be assigned"},
-		{"x = 5; reverse { x = 9 }", "cannot reverse destructive assignment"},
+		{"x = 5; reverse { x = 9 }", "no structural inverse"},
 		// '=' is introduce-only (full-Janus): re-binding an existing name is an error
 		{"x = 1; x = 2", "cannot reassign"},
 		{"a = [1, 2]; a[0] = 9", "cannot assign to"},

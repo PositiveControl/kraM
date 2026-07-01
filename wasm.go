@@ -182,7 +182,7 @@ func kramCompile(src, mode string) string {
 			text += fmt.Sprintf("%d  %s\n", i+1, g)
 		}
 	case "invert":
-		inv, e := invert(ast)
+		inv, e := invertTop(ast)
 		if e != nil {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}
