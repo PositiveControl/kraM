@@ -87,6 +87,7 @@
       <button data-compile="gates">:gates</button>
       <button data-compile="circuit">:circuit</button>
       <button data-compile="verify">:verify</button>
+      <button data-compile="energy">:energy</button>
       <button data-compile="invert">:invert</button>
     </div>
     <div class="pane" id="timeline">
@@ -252,7 +253,7 @@ $("tl").oninput    = e => apply(JSON.parse(kramGoto(+e.target.value)));
 document.querySelectorAll("[data-compile]").forEach(btn => {
   btn.onclick = () => {
     if (!ready) return;
-    const fn = { gates: kramGates, circuit: kramCircuit, verify: kramVerify, invert: kramInvert }[btn.dataset.compile];
+    const fn = { gates: kramGates, circuit: kramCircuit, verify: kramVerify, energy: kramEnergy, invert: kramInvert }[btn.dataset.compile];
     // Compile the selection if there is one, else the whole editor. The gate
     // compiler only accepts reversible code, so select the reversible lines
     // (skipping any `x = …` setup) — same as `:gates <just this code>` in the CLI.

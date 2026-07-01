@@ -211,6 +211,78 @@ func verify(ast Node, ip *Interp) (string, error) {
 	return b.String(), nil
 }
 
+// energyReport estimates the energy a compiled circuit must dissipate, via
+// Landauer's principle: erasing one bit of information costs at least kT·ln2
+// joules. Ideal reversible gates (X/CNOT/Toffoli) dissipate nothing in the
+// adiabatic limit — the cost comes from "garbage": scratch bits left set at the
+// end that must be erased to reset the machine. A circuit that uncomputes all
+// its scratch (the reversible-computing ideal) has zero garbage, hence a zero
+// Landauer bound. An un-uncomputed local is exactly such garbage, so it is
+// counted (locals are excluded from the logical variable set below).
+func energyReport(ast Node, ip *Interp) (string, error) {
+	bc, err := compileBits(ast, ip)
+	if err != nil {
+		return "", fmt.Errorf("not compilable to a circuit: %w", err)
+	}
+
+	// Logical variables are the program's real inputs/outputs. collectVars
+	// deliberately omits `local` names, so a local left un-delocal'd falls
+	// through to the garbage count — which is what it physically is.
+	logical := map[string]bool{}
+	for _, name := range collectVars(ast, bc.procs) {
+		logical[name] = true
+	}
+	kept := make([]bool, bc.nwires)
+	keptWires := 0
+	for name, base := range bc.base {
+		reg := name
+		if n, _, isElem := splitElemKey(name); isElem {
+			reg = n // array elements are always real data, never scratch
+			logical[reg] = true
+		}
+		if logical[reg] {
+			for b := 0; b < bitWidth; b++ {
+				kept[base+b] = true
+				keptWires++
+			}
+		}
+	}
+
+	init := registersFrom(ip)
+	initBits := make([]bool, bc.nwires)
+	for name, base := range bc.base {
+		v := init[name]
+		for b := 0; b < bitWidth; b++ {
+			initBits[base+b] = (v>>uint(b))&1 == 1
+		}
+	}
+	out := simulateBits(bc.gates, bc.nwires, initBits)
+
+	garbage := 0
+	for w := 0; w < bc.nwires; w++ {
+		if !kept[w] && out[w] {
+			garbage++
+		}
+	}
+
+	const kB = 1.380649e-23 // Boltzmann constant, J/K
+	const T = 300.0         // room temperature, K
+	bound := float64(garbage) * kB * T * math.Ln2
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "energy analysis (Landauer bound, T=%.0fK):\n", T)
+	fmt.Fprintf(&b, "  gates:          %d   (reversible — 0 J in the adiabatic limit)\n", len(bc.gates))
+	fmt.Fprintf(&b, "  wires:          %d   (%d ancilla scratch)\n", bc.nwires, bc.nwires-keptWires)
+	fmt.Fprintf(&b, "  garbage bits:   %d   (scratch left set — must be erased)\n", garbage)
+	fmt.Fprintf(&b, "  Landauer bound: %d·kT·ln2 = %.3e J\n", garbage, bound)
+	if garbage == 0 {
+		b.WriteString("  → adiabatically clean: all scratch uncomputed, 0 J lower bound")
+	} else {
+		b.WriteString("  → uncompute the scratch (delocal locals) to reach the 0 J ideal")
+	}
+	return b.String(), nil
+}
+
 // registersFrom snapshots integer-valued variables as initial registers; arrays
 // are expanded element-by-element (a[k]) so constant-index circuits can load
 // their starting values.
