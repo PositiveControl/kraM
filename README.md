@@ -180,9 +180,11 @@ Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 
 ## Status
 
-Early sketch. `:circuit` is a register-level view; `:gates` decomposes to real
-elementary gates (X / CNOT / Toffoli, fixed 16-bit registers, arithmetic mod
-2^16). `:gates` lowers procedures (inlined) and reversible `if`s — conditions can
+Early sketch. `:circuit` is a register-level view (whole ADD / SUB / SWAP /
+CNOT blocks); `:gates` decomposes to real elementary gates (X / CNOT / Toffoli,
+fixed 16-bit registers, arithmetic mod 2^16). Both unroll reversible loops and
+inline procedures against the current state; `:circuit` doesn't yet lower a
+reversible `if` (use `:gates` for that). `:gates` lowers procedures (inlined) and reversible `if`s — conditions can
 compare a variable to a constant or to another variable (`== != < > <= >=`),
 via an equality check or a subtract-based comparator — and `&& || !`
 combinations of those — to controlled gates. Reversible loops are unrolled using the iteration count from the current state
