@@ -160,12 +160,17 @@ lowers too, but only against an array already in state: an **array literal**
 register per element), so compile it after the array is set, not as a whole
 program from cold.
 
-`sort.kr`, `gcd.kr`, and `ca.kr` run in the interpreter only. `sort`/`gcd`
-branch on the data they modify (the `if` reads values its own body changes) and
-`gcd`'s loop length is data-dependent — no fixed wiring. `ca.kr` uses **nested
-loops** (the inner loop differs per outer iteration, so it can't be unrolled)
-over an array grid. Their value is the reversible time-travel scrub (via `uncall`
-/ the studio timeline), not a gate circuit — reversibility holds in every case.
+`ca.kr` also lowers: its **nested** loops unroll (each inner pass re-unrolls
+against the advancing compile-time state) over an array grid whose literal seeds
+per-element registers, and its `local` block counters are `delocal`'d clean, so
+`:energy` reports 0 J. Compile a self-contained *seed + one generation* (studio
+example "CA · 3").
+
+`sort.kr`, `gcd.kr`, and `range.kr` run in the interpreter only: they branch on
+the data they modify (the `if` reads values its own body changes) and `gcd`'s
+loop length is data-dependent — there is no fixed wiring. Their value is the
+reversible time-travel scrub (via `uncall` / the studio timeline) and the trace
+trick, not a gate circuit — reversibility holds in every case.
 
 ---
 

@@ -140,9 +140,18 @@ func (c *bitCircuit) toff(a, b, t int) { c.gates = append(c.gates, BitGate{BTOFF
 func (c *bitCircuit) emit(n Node) error {
 	switch v := n.(type) {
 	case Block:
+		// Emit each statement, then advance the shadow so the next statement (and
+		// any loop or index fold) sees its effect. A `local` introduced here is
+		// live for the statements after it — which is what lets a nested loop over
+		// an array unroll (the inner loop's index folds against the live locals).
 		for _, s := range v.Stmts {
 			if err := c.emit(s); err != nil {
 				return err
+			}
+			if c.vals != nil {
+				if _, err := Eval(s, c.vals); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -216,14 +225,7 @@ func (c *bitCircuit) emit(n Node) error {
 				return err
 			}
 		}
-		if c.vals != nil {
-			val, err := Eval(v.Value, c.vals)
-			if err != nil {
-				return err
-			}
-			c.vals.set(v.Name, val)
-		}
-		return nil
+		return nil // the shadow is advanced by the sequence processor (emit Block)
 	case Reverse:
 		inv, err := invert(v.Body)
 		if err != nil {
@@ -365,6 +367,17 @@ func (c *bitCircuit) operand(node Node) (wires []int, k int64, isConst bool, err
 		}
 		w, e := c.locWires(base.Name, n.Idx)
 		return w, 0, false, e
+	}
+	// A compound expression (e.g. a loop bound like `w - 2*o`) that folds to a
+	// constant under the compile-time shadow is treated as that constant. If it
+	// depends on a value that actually changes at run time, :verify catches the
+	// mismatch — folding is only sound for compile-time-invariant operands.
+	if c.vals != nil {
+		if val, err := Eval(node, c.vals.clone()); err == nil {
+			if k, err := asInt(val, "operand"); err == nil {
+				return nil, k, true, nil
+			}
+		}
 	}
 	return nil, 0, false, fmt.Errorf("operand must be a constant, variable, or constant-index element")
 }
@@ -694,12 +707,11 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 	if c.vals == nil {
 		return fmt.Errorf("cannot unroll a loop without compile-time state (set the loop variables first)")
 	}
-	if hasLoop(v.Do) || hasLoop(v.Rest) {
-		return fmt.Errorf("nested loops cannot be unrolled (each iteration would differ)")
-	}
 	// Unroll against an advancing shadow state: each body is emitted with c.vals
 	// at that iteration (so a loop-varying array index like a[n-1-i] folds to the
-	// right element), then the shadow is advanced by executing the body.
+	// right element), then the shadow is advanced by executing the body. A nested
+	// loop unrolls the same way — its inner emitLoop clones the shadow at that
+	// outer iteration, so each pass emits the gates for its own inner run.
 	shadow := c.vals.clone()
 	saved := c.vals
 	c.vals = shadow
@@ -713,7 +725,8 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 	if !entry {
 		return fmt.Errorf("loop entry condition is false in the current state — :gates/:verify compile from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
 	}
-	if err := c.emitBody(v.Do, shadow); err != nil {
+	// c.vals == shadow here, so c.emit advances the shadow itself (see emit Block).
+	if err := c.emit(v.Do); err != nil {
 		return err
 	}
 	for count := 1; ; count++ {
@@ -727,7 +740,7 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 		if count >= maxIter {
 			return fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
 		}
-		if err := c.emitBody(v.Rest, shadow); err != nil {
+		if err := c.emit(v.Rest); err != nil {
 			return err
 		}
 		reentry, err := evalCond(v.Entry, shadow, "loop re-entry assertion")
@@ -737,20 +750,10 @@ func (c *bitCircuit) emitLoop(v ReversibleLoop) error {
 		if reentry {
 			return fmt.Errorf("loop re-entry assertion violated at compile time")
 		}
-		if err := c.emitBody(v.Do, shadow); err != nil {
+		if err := c.emit(v.Do); err != nil {
 			return err
 		}
 	}
-}
-
-// emitBody emits one loop-body pass against the shadow, then advances the
-// shadow by executing the body so the next pass folds indices correctly.
-func (c *bitCircuit) emitBody(body Node, shadow *Interp) error {
-	if err := c.emit(body); err != nil {
-		return err
-	}
-	_, err := Eval(body, shadow)
-	return err
 }
 
 // hasLoop reports whether a node contains any loop.
@@ -783,12 +786,21 @@ func hasLoop(n Node) bool {
 func (c *bitCircuit) emitSub(n Node) ([]BitGate, error) {
 	saved := c.gates
 	savedNoFree := c.noFree
+	savedVals := c.vals
 	c.gates = nil
 	c.noFree = true
+	// Sub-emit extracts a branch's gates; it must fold indices against the
+	// current shadow but must NOT advance it (the real advance happens once, when
+	// the enclosing statement is executed by the sequence processor). Work on a
+	// throwaway clone so any in-branch advances don't leak.
+	if c.vals != nil {
+		c.vals = c.vals.clone()
+	}
 	err := c.emit(n)
 	sub := c.gates
 	c.gates = saved
 	c.noFree = savedNoFree
+	c.vals = savedVals
 	return sub, err
 }
 

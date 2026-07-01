@@ -66,6 +66,9 @@ func lowerProgram(n Node, ip *Interp) ([]Gate, error) {
 func lower(n Node, ip *Interp) ([]Gate, error) {
 	switch v := n.(type) {
 	case Block:
+		// Emit each statement, then advance the shadow so the next statement (and
+		// any loop or index fold) sees its effect — this makes a `local` live for
+		// the statements after it, so nested loops over arrays unroll.
 		var gates []Gate
 		for _, s := range v.Stmts {
 			gs, err := lower(s, ip)
@@ -73,6 +76,9 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 				return nil, err
 			}
 			gates = append(gates, gs...)
+			if err := advance(s, ip); err != nil {
+				return nil, err
+			}
 		}
 		return gates, nil
 
@@ -135,28 +141,15 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 			}
 			gates = gs
 		}
-		if err := advance(v, ip); err != nil {
-			return nil, err
-		}
-		return gates, nil
+		return gates, nil // shadow advanced by the sequence processor (lower Block)
 
 	case Local:
-		// A scoped temporary — at register level it prepares its register like
-		// an init, and its value carries into the shadow for later folding.
-		gs, err := lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
-		if err != nil {
-			return nil, err
-		}
-		if err := advance(v, ip); err != nil {
-			return nil, err
-		}
-		return gs, nil
+		// A scoped temporary prepares its register like an init (the shadow is
+		// advanced by the sequence processor, keeping it live for later folding).
+		return lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
 	case Delocal:
-		// Removing a temporary asserts its value (a classical check), then frees
-		// the name in the shadow. No register gate beyond the assertion.
-		if err := advance(v, ip); err != nil {
-			return nil, err
-		}
+		// Removing a temporary asserts its value (a classical check) before it is
+		// freed; the sequence processor unsets it in the shadow.
 		return []Gate{{Op: "ASSERT", Operand: Binary{Op: EQ, Left: Var{Name: v.Name}, Right: v.Value},
 			Note: "delocal: assert the temporary is clean before freeing it"}}, nil
 
@@ -242,21 +235,9 @@ func lowerLoop(v ReversibleLoop, ip *Interp) ([]Gate, error) {
 	if ip == nil {
 		return nil, fmt.Errorf("cannot unroll a loop without compile-time state (set the loop variables first)")
 	}
-	if hasLoop(v.Do) || hasLoop(v.Rest) {
-		return nil, fmt.Errorf("nested loops cannot be unrolled (each iteration would differ)")
-	}
 	shadow := ip.clone()
-	lowerBody := func(body Node) ([]Gate, error) {
-		gs, err := lower(body, shadow)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := Eval(body, shadow); err != nil { // advance past this pass
-			return nil, err
-		}
-		return gs, nil
-	}
-
+	// lower(body, shadow) emits gates and advances `shadow` itself (see lower
+	// Block), so no separate advance step is needed here.
 	entry, err := evalCond(v.Entry, shadow, "loop entry assertion")
 	if err != nil {
 		return nil, fmt.Errorf("%w — :circuit compiles from the current variables, so set the loop variables first", err)
@@ -265,7 +246,7 @@ func lowerLoop(v ReversibleLoop, ip *Interp) ([]Gate, error) {
 		return nil, fmt.Errorf("loop entry condition is false in the current state — :circuit compiles from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
 	}
 	var gates []Gate
-	gs, err := lowerBody(v.Do)
+	gs, err := lower(v.Do, shadow)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +263,7 @@ func lowerLoop(v ReversibleLoop, ip *Interp) ([]Gate, error) {
 		if count >= maxIter {
 			return nil, fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
 		}
-		if gs, err = lowerBody(v.Rest); err != nil {
+		if gs, err = lower(v.Rest, shadow); err != nil {
 			return nil, err
 		}
 		gates = append(gates, gs...)
@@ -293,7 +274,7 @@ func lowerLoop(v ReversibleLoop, ip *Interp) ([]Gate, error) {
 		if reentry {
 			return nil, fmt.Errorf("loop re-entry assertion violated at compile time")
 		}
-		if gs, err = lowerBody(v.Do); err != nil {
+		if gs, err = lower(v.Do, shadow); err != nil {
 			return nil, err
 		}
 		gates = append(gates, gs...)

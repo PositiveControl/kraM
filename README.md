@@ -162,36 +162,34 @@ Each `.kr` demo highlights a different facet. Run with `./kram <file>`; see
 | `fib.kr` | reversible arithmetic, a parameterized procedure, a reversible loop — run forward then backward to recover the inputs | ✅ |
 | `reverse.kr` | in-place array reversal by element swaps with computed indices | ✅ |
 | `compute.kr` | compute → copy → uncompute with a `local` ancilla — the garbage-free technique of reversible computing | ✅ |
+| `ca.kr` | a reversible Margolus cellular automaton on a grid — mix a pattern, then scrub the timeline to un-mix it exactly | ✅ (nested loops unroll) |
 | `sort.kr` | making an irreversible algorithm (bubble sort) reversible by recording a swap trace | interpreter-only |
 | `gcd.kr` | the same for Euclid's GCD by subtraction (branch trace) | interpreter-only |
 | `range.kr` | counting elements in `[lo, hi]` — a compound condition with a count trace | interpreter-only |
-| `ca.kr` | a reversible Margolus cellular automaton on a grid — mix a pattern, then scrub the timeline to un-mix it exactly | interpreter-only |
 
 ### Why some demos are interpreter-only
 
 Every demo is **reversible** — `uncall` and the time-travel timeline run it
 backward exactly. But not every reversible program compiles to a *fixed gate
 circuit*. A circuit is static wiring: the compiler must know at compile time
-exactly which gates fire, on which wires, in what order. Two things defeat that:
+exactly which gates fire, on which wires, in what order. What defeats that is
+**data-dependent control flow** (`sort`, `gcd`, `range`): their reversible `if`
+branches on the very values the body is changing — *did this pair swap? which
+operand was larger?* — and `gcd`'s loop length depends on its inputs. The gate
+sequence would differ from one input to the next, so there is no single wiring;
+the branch is decided at *run* time, and its outcome recorded in a trace. That
+trace is the whole point — exactly the information the irreversible algorithm
+would otherwise destroy, and what lets `uncall` reconstruct the input from the
+output.
 
-- **Data-dependent control flow** (`sort`, `gcd`, `range`). Their reversible
-  `if` branches on the very values the body is changing — *did this pair swap?
-  which operand was larger?* — and `gcd`'s loop length depends on its inputs. The
-  gate sequence would differ from one input to the next, so there is no single
-  wiring; the branch is decided at *run* time, and its outcome recorded in a
-  trace. That trace is the whole point: it is exactly the information the
-  irreversible algorithm would otherwise destroy, and it is what lets `uncall`
-  reconstruct the input from the output.
-- **Nested loops over an array** (`ca`). The inner loop's range and the cells it
-  touches change on every outer iteration, so it can't be flattened into one
-  fixed gate sequence.
-
-For these, the demonstration *is* the reversibility at the language level — the
-trace trick and the exact backward run (via `uncall` or the studio's scrub),
-not a gate diagram. The circuit views (`:gates` / `:circuit` / `:verify` /
-`:energy`) apply to the straight-line and unrollable demos (`fib`, `reverse`,
-`compute`), which lower — initialisation, loops, procedures, and array element
-ops included — and whose gate circuit is checked against the interpreter.
+Everything whose control flow is fixed at compile time *does* lower, even when
+it looks complex: the compiler unrolls loops (including **nested** loops, like
+`ca`'s grid sweep — each inner pass re-unrolls against the advancing compile-time
+state), inlines procedures, prepares array literals element by element, and
+folds loop-invariant index/bound expressions to constants. `fib`, `reverse`,
+`compute`, and `ca` all lower to `X / CNOT / Toffoli` gates whose circuit is
+checked against the interpreter (`:verify`) and costed with Landauer's bound
+(`:energy` — 0 J when every `local` ancilla is `delocal`'d back to clean).
 
 Note: the compile commands lower a whole program from cold (its `=`
 initialisation included). A demo *file* that runs a computation forward and then
@@ -221,7 +219,8 @@ reversible `if` (use `:gates` for that). `:gates` lowers procedures (inlined) an
 compare a variable to a constant or to another variable (`== != < > <= >=`),
 via an equality check or a subtract-based comparator — and `&& || !`
 combinations of those — to controlled gates. Reversible loops are unrolled using the iteration count from the current state
-(the circuit is specialised to that count); nested loops can't be unrolled. Ancilla wires are recycled, so a circuit's width is bounded by
+(the circuit is specialised to that count); nested loops unroll too — each inner
+pass re-unrolls against the advancing compile-time state. Ancilla wires are recycled, so a circuit's width is bounded by
 peak concurrent scratch, not program length. `+=`/`-=` aren't bit-exact in the
 *interpreter* (`^=` is); the *gate* circuit is exact mod 2^16. Array element ops
 lower to circuits when the index folds to a constant at compile time — including

@@ -129,14 +129,37 @@ n = 6
 i = 0
 from i == 0 { } loop { xs[i] <=> xs[n - 1 - i]; i += 1 } until i == 3`,
 
-	// nested reversible loops cannot be unrolled (the inner loop differs per
-	// outer iteration) — this is the CA "step generation" shape.
+	// nested reversible loops unroll: the inner loop re-unrolls each outer pass
+	// against the advancing shadow state (this is the CA "step generation" shape).
 	"nested-loops": `a = 0; b = 0
 from a == 0 { } loop {
   from b == 0 { } loop { b += 1 } until b == 2
   b -= 2
   a += 1
 } until a == 2`,
+
+	// the CA step generation itself: nested loops over a flat grid with local
+	// counters and computed-index element swaps — the full stress case.
+	"ca-step": `w = 4
+h = 4
+o = 0
+g = [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0]
+local by = o
+from by == o { } loop {
+  local bx = o
+  from bx == o { } loop {
+    g[by*w+bx]       <=> g[by*w+bx+1]
+    g[by*w+bx+1]     <=> g[(by+1)*w+bx+1]
+    g[(by+1)*w+bx+1] <=> g[(by+1)*w+bx]
+    bx += 2
+  } until bx == w - o
+  bx -= w - 2*o
+  delocal bx = o
+  by += 2
+} until by == h - o
+by -= h - 2*o
+delocal by = o
+o ^= 1`,
 
 	// forget is deliberately irreversible: no gate, no inverse.
 	"forget": `x = 5
@@ -162,7 +185,8 @@ func TestCompileMatrix(t *testing.T) {
 
 		{"array-init", "OK", "OK", "has:MATCH", "has:Landauer", ""},
 		{"array-reverse", "OK", "OK", "has:MATCH", "has:Landauer", ""},
-		{"nested-loops", "err:nested loops cannot be unrolled", "err:nested loops cannot be unrolled", "err:nested loops", "err:nested loops", ""},
+		{"nested-loops", "OK", "OK", "has:MATCH", "has:Landauer", ""},
+		{"ca-step", "OK", "OK", "has:MATCH", "has:Landauer", ""},
 		{"forget", "err:irreversible erasure", "err:irreversible erasure", "err:irreversible erasure", "err:irreversible erasure", "err:cannot reverse forget"},
 		{"reassign", "err:cannot reassign", "", "", "", ""},
 	}

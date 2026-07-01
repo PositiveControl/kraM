@@ -159,6 +159,29 @@ from by == o { } loop {
 by -= h - 2*o
 delocal by = o
 o ^= 1`,
+  "CA · 3. seed + one generation (try :gates / :verify)": `# self-contained: seed the grid AND run one generation, so the whole thing
+# lowers to a gate circuit. :gates -> ~4900 X/CNOT/Toffoli; :verify -> MATCH;
+# :energy -> 0 garbage (the local counters are delocal'd, so no ancilla leaks).
+w = 8
+h = 8
+o = 0
+g = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+local by = o
+from by == o { } loop {
+  local bx = o
+  from bx == o { } loop {
+    g[by*w+bx]        <=> g[by*w+bx+1]
+    g[by*w+bx+1]      <=> g[(by+1)*w+bx+1]
+    g[(by+1)*w+bx+1]  <=> g[(by+1)*w+bx]
+    bx += 2
+  } until bx == w - o
+  bx -= w - 2*o
+  delocal bx = o
+  by += 2
+} until by == h - o
+by -= h - 2*o
+delocal by = o
+o ^= 1`,
 };
 
 const $ = id => document.getElementById(id);
@@ -277,7 +300,8 @@ $("editor").value = EXAMPLES["fib — reversible Fibonacci"];
 // boot wasm
 (async () => {
   const go = new Go();
-  const res = await WebAssembly.instantiateStreaming(fetch("kram.wasm"), go.importObject);
+  // no-store: always load the freshly built wasm, never a cached copy.
+  const res = await WebAssembly.instantiateStreaming(fetch("kram.wasm", { cache: "no-store" }), go.importObject);
   go.run(res.instance);
   ready = true;
   $("boot").textContent = "ready";
