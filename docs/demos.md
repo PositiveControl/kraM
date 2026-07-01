@@ -152,12 +152,20 @@ for.
 
 ## Note on circuits
 
-`fib.kr`, `reverse.kr`, and `compute.kr` lower to reversible gate circuits
-(`:gates` / `:verify`) — straight-line, constant/loop-folded-index, and
-local-ancilla code. `sort.kr` and `gcd.kr` run in the interpreter only: their conditionals branch on the data
-being sorted/reduced (the `if` modifies the values its own condition reads), and
-`gcd.kr`'s loop length is genuinely data-dependent — neither has a fixed wiring.
-The reversibility itself (via `uncall`) holds in all four.
+`fib.kr` and `compute.kr` lower to reversible gate circuits (`:gates` /
+`:circuit` / `:verify` / `:energy`) — straight-line, unrolled loops, inlined
+procedures, and local-ancilla code all compile. `reverse.kr`'s element-swap loop
+lowers too, but only against an array already in state: an **array literal**
+`xs = [...]` is not lowered (a literal is not a single register — arrays need a
+register per element), so compile it after the array is set, not as a whole
+program from cold.
+
+`sort.kr`, `gcd.kr`, and `ca.kr` run in the interpreter only. `sort`/`gcd`
+branch on the data they modify (the `if` reads values its own body changes) and
+`gcd`'s loop length is data-dependent — no fixed wiring. `ca.kr` uses **nested
+loops** (the inner loop differs per outer iteration, so it can't be unrolled)
+over an array grid. Their value is the reversible time-travel scrub (via `uncall`
+/ the studio timeline), not a gate circuit — reversibility holds in every case.
 
 ---
 

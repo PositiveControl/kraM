@@ -84,6 +84,10 @@ func invert(n Node) (Node, error) {
 	case Assert:
 		return v, nil // self-inverse: the check is the same backward
 
+	case Reverse:
+		// reverse{X} runs the inverse of X; undoing that is running X forward.
+		return v.Body, nil
+
 	case Call:
 		return Uncall{Name: v.Name, Args: v.Args}, nil // running a proc backward
 	case Uncall:

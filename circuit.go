@@ -93,6 +93,9 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 		}
 
 	case Swap:
+		if v.AI != nil || v.BI != nil {
+			return nil, fmt.Errorf("indexed element swap is not lowered at the register level (arrays need per-element registers) — use :gates")
+		}
 		return []Gate{{Op: "SWAP", A: v.A, B: v.B,
 			Note: "3 CNOTs per bit (Fredkin-style)"}}, nil
 
@@ -108,6 +111,9 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 		return []Gate{{Op: "ASSERT", Operand: v.Cond, Note: "classical check, not a physical gate"}}, nil
 
 	case Assign:
+		if _, isArr := v.Value.(ArrayLit); isArr {
+			return nil, fmt.Errorf("array-literal initialisation is not lowered at the register level (arrays need per-element registers) — use :gates")
+		}
 		// Fresh initialisation from a zero register is the same as XOR-ing the
 		// value in (0 ^ k == k), so it lowers to the same X / CNOT prep gates.
 		// Advance the shadow so a following loop unrolls from the right values.
