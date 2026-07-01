@@ -14,6 +14,7 @@ information they would otherwise destroy.
 | `reverse.kr` | reversible array element ops in a loop | swaps are self-inverse |
 | `sort.kr` | making an irreversible algorithm reversible | records a swap trace |
 | `gcd.kr` | same, with arithmetic | records a branch trace |
+| `compute.kr` | compute-copy-uncompute with a local ancilla | the ancilla is uncomputed to 0 |
 
 ---
 
@@ -119,11 +120,41 @@ backward and reconstructs both inputs from the single gcd value.
 
 ---
 
+## `compute.kr` — compute-copy-uncompute
+
+Computes `f(x) = 3x + 1` into an output using a **local ancilla**, leaving the
+input untouched and the scratch clean.
+
+```
+x        = 7
+f(x)=3x+1 = 22
+uncalled  = 0
+```
+
+**Showcases**
+- **Local scope as an ancilla** — `local t = 0` introduces a scratch variable;
+  the result is built up in it, copied to the output, then the build is undone
+  step by step; `delocal t = 0` asserts the scratch is clean and removes it.
+- **The compute-copy-uncompute pattern** — the foundational reversible-computing
+  technique. You can't just leave the intermediate `t` lying around (it would be
+  garbage); `delocal`'s value assertion *forces* you to uncompute it.
+- **By-reference procedures** — `f(inp, out)` reads its input and adds to its
+  output in place.
+- **Lowers to a circuit** — every step (`+= -=`, the local) compiles, so
+  `:verify` confirms the gate circuit (with the local as an ancilla register)
+  matches the interpreter.
+
+**Point:** a reversible subroutine produces its output *and* cleans up its
+scratch, so it composes without accumulating garbage — exactly what ancillas are
+for.
+
+---
+
 ## Note on circuits
 
-`fib.kr` and `reverse.kr` lower to reversible gate circuits (`:gates` /
-`:verify`) — straight-line and constant/loop-folded-index code. `sort.kr` and
-`gcd.kr` run in the interpreter only: their conditionals branch on the data
+`fib.kr`, `reverse.kr`, and `compute.kr` lower to reversible gate circuits
+(`:gates` / `:verify`) — straight-line, constant/loop-folded-index, and
+local-ancilla code. `sort.kr` and `gcd.kr` run in the interpreter only: their conditionals branch on the data
 being sorted/reduced (the `if` modifies the values its own condition reads), and
 `gcd.kr`'s loop length is genuinely data-dependent — neither has a fixed wiring.
 The reversibility itself (via `uncall`) holds in all four.

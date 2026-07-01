@@ -1,0 +1,33 @@
+# kraMLang compute-copy-uncompute with a local ancilla.   Run:  ./kram compute.kr
+# Docs: docs/demos.md
+#
+# The fundamental technique of reversible computing: to compute f(x) into an
+# output without leaving garbage, build the result in a temporary (a `local`
+# ancilla), COPY it to the output, then UNCOMPUTE the temporary back to its
+# starting value. `delocal t = 0` asserts the temporary is clean again — so the
+# scratch cannot silently become garbage.
+#
+# Here f(x) = 3x + 1. The input is untouched; only the output changes.
+
+x = 7
+result = 0
+
+proc f(inp, out) {
+  local t = 0
+  t += inp          # build the result in the ancilla
+  t += inp
+  t += inp
+  t += 1            # t = 3*inp + 1
+  out += t          # copy it to the output
+  t -= 1            # uncompute the ancilla back to 0...
+  t -= inp
+  t -= inp
+  t -= inp
+  delocal t = 0     # ...and assert it is clean, then remove it
+}
+
+print "x        = " + x
+call f(x, result)
+print "f(x)=3x+1 = " + result
+uncall f(x, result)
+print "uncalled  = " + result
