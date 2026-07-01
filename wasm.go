@@ -166,7 +166,7 @@ func kramCompile(src, mode string) string {
 	var text string
 	switch mode {
 	case "circuit":
-		gates, e := lower(ast)
+		gates, e := lowerProgram(ast, env)
 		if e != nil {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}

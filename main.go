@@ -147,7 +147,7 @@ func main() {
 				fmt.Println("parse error:", err)
 				continue
 			}
-			gates, err := lower(ast)
+			gates, err := lowerProgram(ast, ip)
 			if err != nil {
 				fmt.Println("cannot compile to circuit:", err)
 				continue

@@ -47,15 +47,28 @@ func (g Gate) String() string {
 	return s
 }
 
-// lower compiles a straight-line reversible program to a reversible gate
-// netlist. SKETCH: register-level gates over fixed-width registers; control
-// flow and irreversible operations are rejected (with the reason why).
-func lower(n Node) ([]Gate, error) {
+// lowerProgram is the entry for :circuit — it prepares a shadow interpreter
+// (procedures registered, state cloned so lowering never mutates the caller)
+// then lowers the whole program to a register-level netlist.
+func lowerProgram(n Node, ip *Interp) ([]Gate, error) {
+	shadow := NewInterp()
+	if ip != nil {
+		shadow = ip.clone()
+	}
+	registerProcs(n, shadow.procs)
+	return lower(n, shadow)
+}
+
+// lower compiles a reversible program to a register-level gate netlist. Control
+// flow is unrolled and procedures inlined against `ip`, an advancing shadow of
+// the interpreter state (so a data-dependent loop unrolls the right number of
+// times); irreversible operations are rejected with the reason why.
+func lower(n Node, ip *Interp) ([]Gate, error) {
 	switch v := n.(type) {
 	case Block:
 		var gates []Gate
 		for _, s := range v.Stmts {
-			gs, err := lower(s)
+			gs, err := lower(s, ip)
 			if err != nil {
 				return nil, err
 			}
@@ -97,17 +110,149 @@ func lower(n Node) ([]Gate, error) {
 	case Assign:
 		// Fresh initialisation from a zero register is the same as XOR-ing the
 		// value in (0 ^ k == k), so it lowers to the same X / CNOT prep gates.
-		return lower(XorAssign{Name: v.Name, Value: v.Value})
+		// Advance the shadow so a following loop unrolls from the right values.
+		gs, err := lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
+		if err != nil {
+			return nil, err
+		}
+		if err := advance(v, ip); err != nil {
+			return nil, err
+		}
+		return gs, nil
+
+	case Local:
+		// A scoped temporary — at register level it prepares its register like
+		// an init, and its value carries into the shadow for later folding.
+		gs, err := lower(XorAssign{Name: v.Name, Value: v.Value}, ip)
+		if err != nil {
+			return nil, err
+		}
+		if err := advance(v, ip); err != nil {
+			return nil, err
+		}
+		return gs, nil
+	case Delocal:
+		// Removing a temporary asserts its value (a classical check), then frees
+		// the name in the shadow. No register gate beyond the assertion.
+		if err := advance(v, ip); err != nil {
+			return nil, err
+		}
+		return []Gate{{Op: "ASSERT", Operand: Binary{Op: EQ, Left: Var{Name: v.Name}, Right: v.Value},
+			Note: "delocal: assert the temporary is clean before freeing it"}}, nil
+
+	case ProcDef:
+		return nil, nil // a definition emits nothing; registered in the shadow's procs
+
+	case Call:
+		body, err := bindProcBody(ip.procs, v.Name, v.Args)
+		if err != nil {
+			return nil, err
+		}
+		return lower(body, ip)
+	case Uncall:
+		body, err := bindProcBody(ip.procs, v.Name, v.Args)
+		if err != nil {
+			return nil, err
+		}
+		inv, err := invert(body)
+		if err != nil {
+			return nil, fmt.Errorf("cannot uncall %q: %w", v.Name, err)
+		}
+		return lower(inv, ip)
+
+	case ReversibleLoop:
+		return lowerLoop(v, ip)
+
 	case Forget:
 		return nil, fmt.Errorf("forget %q is irreversible erasure — no gate exists", v.Name)
 	case Print:
 		return nil, nil // I/O has no register effect — the circuit simply omits it
-	case If, While, ReversibleLoop, Reverse:
-		return nil, fmt.Errorf(":circuit is a straight-line register view and does not unroll control flow — use :gates for loops/if (it unrolls and inlines)")
-	case ProcDef, Call, Uncall:
-		return nil, fmt.Errorf(":circuit does not inline procedures — use :gates (it inlines and unrolls)")
+	case If:
+		return nil, fmt.Errorf(":circuit does not lower a reversible if yet — use :gates (it lowers if to controlled gates)")
+	case While:
+		return nil, fmt.Errorf("classic while is not reversible — use from/loop/until")
+	case Reverse:
+		inv, err := invert(v.Body)
+		if err != nil {
+			return nil, err
+		}
+		return lower(inv, ip)
 	}
 	return nil, fmt.Errorf("cannot lower %T to a gate", n)
+}
+
+// advance runs a statement on the shadow interpreter to move its state forward,
+// so a subsequent loop unroll or index fold sees the right values.
+func advance(n Node, ip *Interp) error {
+	if ip == nil {
+		return nil
+	}
+	_, err := Eval(n, ip)
+	return err
+}
+
+// lowerLoop unrolls a reversible loop into register-level gates, advancing a
+// clone of the shadow so the iteration count comes from the actual state.
+func lowerLoop(v ReversibleLoop, ip *Interp) ([]Gate, error) {
+	if ip == nil {
+		return nil, fmt.Errorf("cannot unroll a loop without compile-time state (set the loop variables first)")
+	}
+	if hasLoop(v.Do) || hasLoop(v.Rest) {
+		return nil, fmt.Errorf("nested loops cannot be unrolled (each iteration would differ)")
+	}
+	shadow := ip.clone()
+	lowerBody := func(body Node) ([]Gate, error) {
+		gs, err := lower(body, shadow)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := Eval(body, shadow); err != nil { // advance past this pass
+			return nil, err
+		}
+		return gs, nil
+	}
+
+	entry, err := evalCond(v.Entry, shadow, "loop entry assertion")
+	if err != nil {
+		return nil, fmt.Errorf("%w — :circuit compiles from the current variables, so set the loop variables first", err)
+	}
+	if !entry {
+		return nil, fmt.Errorf("loop entry condition is false in the current state — :circuit compiles from the current variables, so set them to the loop's starting values first (e.g. :reset and re-init)")
+	}
+	var gates []Gate
+	gs, err := lowerBody(v.Do)
+	if err != nil {
+		return nil, err
+	}
+	gates = append(gates, gs...)
+	const maxIter = 1_000_000
+	for count := 1; ; count++ {
+		exit, err := evalCond(v.Exit, shadow, "loop exit assertion")
+		if err != nil {
+			return nil, err
+		}
+		if exit {
+			return gates, nil
+		}
+		if count >= maxIter {
+			return nil, fmt.Errorf("loop exceeds %d iterations while unrolling", maxIter)
+		}
+		if gs, err = lowerBody(v.Rest); err != nil {
+			return nil, err
+		}
+		gates = append(gates, gs...)
+		reentry, err := evalCond(v.Entry, shadow, "loop re-entry assertion")
+		if err != nil {
+			return nil, err
+		}
+		if reentry {
+			return nil, fmt.Errorf("loop re-entry assertion violated at compile time")
+		}
+		if gs, err = lowerBody(v.Do); err != nil {
+			return nil, err
+		}
+		gates = append(gates, gs...)
+	}
 }
 
 // simulate runs a gate netlist on integer registers, returning the final state.

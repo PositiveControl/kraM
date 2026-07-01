@@ -96,7 +96,7 @@ func TestInterpreterMatchesCircuit(t *testing.T) {
 		}
 
 		// circuit
-		gates, err := lower(progAst)
+		gates, err := lowerProgram(progAst, ip)
 		if err != nil {
 			t.Fatalf("lower %q: %v", progSrc, err)
 		}
