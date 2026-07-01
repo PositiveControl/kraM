@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kraM Studio</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --edge: #262b38; --ink: #e6e9ef;
+    --dim: #8b93a7; --accent: #6ea8fe; --good: #5fd08a; --warn: #f0b429; --bad: #f06a6a;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 var(--mono); height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    padding: 10px 16px; border-bottom: 1px solid var(--edge);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .5px; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  #boot { color: var(--warn); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; min-height: 0; background: var(--edge); }
+  .col { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+  .pane { border-bottom: 1px solid var(--edge); display: flex; flex-direction: column; min-height: 0; }
+  .pane > .hd {
+    padding: 6px 12px; color: var(--dim); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .8px; border-bottom: 1px solid var(--edge); display: flex; gap: 8px; align-items: center;
+  }
+  .pane > .body { padding: 10px 12px; overflow: auto; flex: 1; }
+  #editor {
+    width: 100%; flex: 1; resize: none; border: 0; outline: 0; padding: 12px;
+    background: var(--panel); color: var(--ink); font: 13px/1.6 var(--mono); tab-size: 2;
+  }
+  .row { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--edge); flex-wrap: wrap; }
+  button {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #06101f; border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .4; cursor: default; }
+  select { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: 5px; font: inherit; }
+  .grow { flex: 1; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+  .msg-warn { color: var(--warn); }
+  .msg-err { color: var(--bad); }
+  .msg-note { color: var(--dim); }
+  /* timeline */
+  #timeline input[type=range] { width: 100%; accent-color: var(--accent); }
+  #tl-label { color: var(--dim); font-size: 12px; min-height: 18px; }
+  #tl-pos { color: var(--accent); }
+  /* env table */
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 2px 8px 2px 0; vertical-align: top; }
+  td.name { color: var(--accent); }
+  .grid { display: inline-grid; gap: 2px; margin-top: 2px; }
+  .cell { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+          border-radius: 3px; font-size: 11px; background: var(--panel); border: 1px solid var(--edge); }
+</style>
+</head>
+<body>
+<header>
+  <h1>kraM Studio</h1>
+  <span class="sub">reversible language · time-travel · circuits</span>
+  <span id="boot">loading wasm…</span>
+</header>
+<main>
+  <!-- LEFT: editor + controls -->
+  <div class="col">
+    <div class="pane" style="flex:1">
+      <div class="hd">
+        editor
+        <span class="grow"></span>
+        <select id="examples"><option value="">examples…</option></select>
+      </div>
+      <textarea id="editor" spellcheck="false"></textarea>
+    </div>
+    <div class="row">
+      <button id="run" class="primary" disabled>▶ Run</button>
+      <button id="undo" disabled>◀ Undo</button>
+      <button id="redo" disabled>Redo ▶</button>
+      <button id="reset">⟲ Reset</button>
+      <span class="grow"></span>
+      <button data-compile="gates">:gates</button>
+      <button data-compile="circuit">:circuit</button>
+      <button data-compile="verify">:verify</button>
+      <button data-compile="invert">:invert</button>
+    </div>
+    <div class="pane" id="timeline">
+      <div class="hd">timeline <span class="grow"></span><span id="tl-pos"></span></div>
+      <div class="body" style="padding:12px">
+        <input type="range" id="tl" min="0" max="0" value="0" disabled>
+        <div id="tl-label">— no history —</div>
+      </div>
+    </div>
+  </div>
+  <!-- RIGHT: state + output + circuit -->
+  <div class="col">
+    <div class="pane" style="flex:2">
+      <div class="hd">state</div>
+      <div class="body"><div id="env" class="msg-note">(empty)</div></div>
+    </div>
+    <div class="pane" style="flex:1">
+      <div class="hd">output</div>
+      <div class="body"><pre id="output" class="msg-note">(no output)</pre></div>
+    </div>
+    <div class="pane" style="flex:1">
+      <div class="hd">circuit / messages</div>
+      <div class="body"><pre id="circuit" class="msg-note">— run :gates / :circuit / :verify —</pre></div>
+    </div>
+  </div>
+</main>
+
+<script src="wasm_exec.js"></script>
+<script>
+const EXAMPLES = {
+  "fib — reversible Fibonacci": `a = 0; b = 1; i = 0; n = 10
+proc fibstep(x, y) { x += y; x <=> y }
+from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n
+print "fib pair: " + a + ", " + b`,
+  "reverse block": `a = 0
+reverse { a += 5; a += 3 }
+print a`,
+  "swap + xor": `x = 12; y = 7
+x <=> y
+x ^= 10`,
+  "straight-line (try :gates)": `a = 1; b = 2
+a += b
+a <=> b`,
+  "CA · 1. seed grid": `w = 8
+h = 8
+o = 0
+g = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`,
+  "CA · 2. step generation (Run repeatedly, then scrub back)": `# Margolus block-rotation: rotate every 2x2 block at offset o, then flip o.
+# every move is a swap -> drag the timeline back to un-mix the grid exactly.
+local by = o
+from by == o { } loop {
+  local bx = o
+  from bx == o { } loop {
+    g[by*w+bx]        <=> g[by*w+bx+1]
+    g[by*w+bx+1]      <=> g[(by+1)*w+bx+1]
+    g[(by+1)*w+bx+1]  <=> g[(by+1)*w+bx]
+    bx += 2
+  } until bx == w - o
+  bx -= w - 2*o
+  delocal bx = o
+  by += 2
+} until by == h - o
+by -= h - 2*o
+delocal by = o
+o ^= 1`,
+};
+
+const $ = id => document.getElementById(id);
+let ready = false;
+
+function apply(state) {
+  // env
+  const names = Object.keys(state.vars).sort();
+  const env = $("env");
+  if (!names.length) { env.className = "msg-note"; env.textContent = "(empty)"; }
+  else {
+    env.className = "";
+    // grid width for flat-array rendering: a numeric var `w` turns any flat
+    // numeric array into a w-wide grid (the CA convention). ponytail: convention,
+    // not config — the CA demo names its grid width `w`.
+    const gw = typeof state.vars.w?.val === "number" ? state.vars.w.val : 0;
+    const t = document.createElement("table");
+    for (const n of names) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.className = "name"; td1.textContent = n;
+      const td2 = document.createElement("td"); td2.appendChild(renderVal(state.vars[n].val, state.vars[n].repr, gw));
+      tr.append(td1, td2); t.appendChild(tr);
+    }
+    env.replaceChildren(t);
+  }
+  // output
+  const out = $("output");
+  if (!state.output.length) { out.className = "msg-note"; out.textContent = "(no output)"; }
+  else { out.className = ""; out.textContent = state.output.join("\n"); }
+  // timeline
+  const tl = $("tl");
+  tl.max = state.total; tl.value = state.cursor; tl.disabled = state.total === 0;
+  $("tl-pos").textContent = state.total ? `${state.cursor} / ${state.total}` : "";
+  const label = state.history[state.cursor - 1];
+  $("tl-label").textContent = state.total
+    ? (state.cursor === 0 ? "— start —" : label)
+    : "— no history —";
+  $("undo").disabled = state.cursor === 0;
+  $("redo").disabled = state.cursor === state.total;
+}
+
+// renderVal: draw a numeric array as a grid (the CA substrate) when we know its
+// width — a flat array laid out w-wide, or a nested 2D array. Everything else
+// renders as its text repr.
+function renderVal(val, repr, width) {
+  if (Array.isArray(val) && val.length && Array.isArray(val[0])) {
+    return renderGrid(val.flat(), val[0].length);          // nested 2D
+  }
+  if (width > 0 && Array.isArray(val) && val.length % width === 0 &&
+      val.every(c => typeof c === "number")) {
+    return renderGrid(val, width);                          // flat, w-wide
+  }
+  const s = document.createElement("span"); s.textContent = repr; return s;
+}
+
+function renderGrid(cells, width) {
+  const g = document.createElement("div");
+  g.className = "grid";
+  g.style.gridTemplateColumns = `repeat(${width}, 22px)`;
+  for (const c of cells) {
+    const d = document.createElement("div"); d.className = "cell";
+    d.textContent = c; d.style.background = c ? "var(--accent)" : "var(--panel)";
+    if (c) d.style.color = "#06101f";
+    g.appendChild(d);
+  }
+  return g;
+}
+
+function showMessages(r) {
+  const c = $("circuit"); const lines = [];
+  (r.warnings || []).forEach(w => lines.push(`⚠ ${w}`));
+  (r.notes || []).forEach(n => lines.push(`· ${n}`));
+  if (r.error) lines.push(`error: ${r.error}`);
+  if (lines.length) { c.className = r.error ? "msg-err" : "msg-warn"; c.textContent = lines.join("\n"); }
+}
+
+$("run").onclick = () => {
+  if (!ready) return;
+  const r = JSON.parse(kramEval($("editor").value));
+  if (r.state) apply(r.state);
+  showMessages(r);
+  if (r.ok && !r.warnings?.length && !r.notes?.length) {
+    $("circuit").className = "msg-note";
+    $("circuit").textContent = r.result ? `= ${r.result}` : "ok";
+  }
+};
+$("undo").onclick  = () => apply(JSON.parse(kramUndo()).state);
+$("redo").onclick  = () => apply(JSON.parse(kramRedo()).state);
+$("reset").onclick = () => { apply(JSON.parse(kramReset())); $("circuit").textContent = "— reset —"; };
+$("tl").oninput    = e => apply(JSON.parse(kramGoto(+e.target.value)));
+
+document.querySelectorAll("[data-compile]").forEach(btn => {
+  btn.onclick = () => {
+    if (!ready) return;
+    const fn = { gates: kramGates, circuit: kramCircuit, verify: kramVerify, invert: kramInvert }[btn.dataset.compile];
+    const r = JSON.parse(fn($("editor").value));
+    const c = $("circuit");
+    if (r.ok) { c.className = ""; c.textContent = r.text || "(empty)"; }
+    else { c.className = "msg-err"; c.textContent = r.error; }
+  };
+});
+
+// examples menu
+const sel = $("examples");
+for (const name of Object.keys(EXAMPLES)) {
+  const o = document.createElement("option"); o.value = name; o.textContent = name; sel.appendChild(o);
+}
+sel.onchange = () => { if (sel.value) { $("editor").value = EXAMPLES[sel.value]; sel.value = ""; } };
+$("editor").value = EXAMPLES["fib — reversible Fibonacci"];
+
+// boot wasm
+(async () => {
+  const go = new Go();
+  const res = await WebAssembly.instantiateStreaming(fetch("kram.wasm"), go.importObject);
+  go.run(res.instance);
+  ready = true;
+  $("boot").textContent = "ready";
+  $("boot").style.color = "var(--good)";
+  $("run").disabled = false;
+})().catch(e => { $("boot").textContent = "wasm failed: " + e; });
+</script>
+</body>
+</html>
