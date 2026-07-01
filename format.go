@@ -55,6 +55,8 @@ func format(n Node) string {
 		return "local " + v.Name + " = " + format(v.Value)
 	case Delocal:
 		return "delocal " + v.Name + " = " + format(v.Value)
+	case Forget:
+		return "forget " + v.Name
 	case Print:
 		return "print " + format(v.Value)
 	case Assert:

@@ -166,6 +166,8 @@ func (c *bitCircuit) emit(n Node) error {
 		}
 	case IdxAssign:
 		return fmt.Errorf("destructive element assignment is irreversible — use += / -= / ^= / <=>")
+	case Forget:
+		return fmt.Errorf("forget %q is irreversible erasure — no gate exists", v.Name)
 	case Local:
 		// A local is an ancilla register: allocate it, initialise to its value.
 		wires := c.allocReg()

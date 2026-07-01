@@ -33,12 +33,15 @@ are the same binary, dispatched on the invoked name.
 
 ## The idea: reversibility
 
-Overwriting a variable destroys information, so it warns:
+`=` **introduces** a name; it never overwrites. Re-binding an existing variable
+would destroy its value — the irreversible act — so it is an error, not a warning
+(the full-Janus discipline: no destructive assignment):
 
 ```
 > x = 5
 > x = 9
-⚠ destructive overwrite of "x" — use += / -= / <=> to stay reversible
+error: cannot reassign "x" with '=' — '=' introduces a fresh name;
+       use += / -= / ^= / <=> to change it, or `forget x` to erase it first
 ```
 
 Reversible updates keep the information and can be undone exactly:
@@ -47,6 +50,18 @@ Reversible updates keep the information and can be undone exactly:
 x += 3      # inverse: x -= 3
 x ^= 10     # XOR — self-inverse
 a <=> b     # swap — self-inverse
+```
+
+To destroy information on purpose, there is one explicit escape hatch —
+`forget x`. It erases the variable (freeing the name to re-introduce). It is the
+*only* irreversible act in the language, so it is named and visible rather than
+hiding inside an innocent-looking `=`; `reverse` / `uncall` refuse it and it
+lowers to no gate:
+
+```
+> x = 5
+> forget x       # deliberate erasure — the one irreversible operation
+> x = 9          # the name is free again
 ```
 
 So you can run a block backward:
@@ -158,7 +173,8 @@ See [docs/demos.md](docs/demos.md) for what each of the four demos
 `:circuit CODE` — compile reversible code to a register-level netlist
 `:gates CODE` — compile to elementary X / CNOT / Toffoli gates (adds use a Cuccaro adder)
 `:verify CODE` — check the compiled circuit matches the interpreter
-`:reset` `:strict` `:help` — clear state, enforce reversibility, list commands
+`:energy CODE` — Landauer energy bound from the circuit's garbage bits
+`:reset` `:help` — clear state, list commands
 
 Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
 

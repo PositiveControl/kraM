@@ -178,8 +178,16 @@ demo):
 - `x ^= e` — XOR (exact, self-inverse)
 - `a <=> b` / `a[i] <=> a[j]` — swap (self-inverse)
 
-**Destructive (irreversible) operations** warn, and error under `:strict`:
-- `x = e` overwriting an existing value, `a[i] = e`, `print` (output)
+**Assignment is introduce-only.** `x = e` binds a *fresh* name; re-binding an
+existing variable (or `a[i] = e`) is an error — that would destroy information.
+Change values with the reversible updates above. This is the full-Janus
+discipline: the language has no destructive assignment.
+
+**The one irreversible escape hatch** — `forget x` deliberately erases a
+variable (freeing the name to re-introduce). It is the *only* way to destroy
+information, so it is explicit rather than hidden inside an `=`: `reverse` /
+`uncall` refuse it, it lowers to no gate, and `:energy` is where its cost shows
+up. (`print` is likewise irreversible I/O.)
 
 **Control flow**
 - `if c { … } else { … }` / `else if`, with strict boolean conditions
@@ -200,8 +208,8 @@ reversible; in circuits a local is an ancilla register.
 `:invert CODE` prints it.
 
 **REPL & tooling** — `:undo` `:redo` `:history` `:step` (time travel), `:env`
-`:output`, `:circuit` / `:gates` / `:verify` (compile to and check reversible
-gate circuits), `:strict`, `:reset`. Shorthands `_` (last result) and `!!`
+`:output`, `:circuit` / `:gates` / `:verify` / `:energy` (compile to, check, and
+cost reversible gate circuits), `:reset`. Shorthands `_` (last result) and `!!`
 (last line).
 
 **Circuit lowering** reaches: reversible updates, swaps, constant- and

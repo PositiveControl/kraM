@@ -55,6 +55,7 @@ const (
 	AND     // &&
 	OR      // ||
 	NOT     // !  (boolean negation)
+	FORGET  // forget (deliberate irreversible erasure of a variable)
 )
 
 type Token struct {
@@ -161,6 +162,8 @@ func kindName(k TokKind) string {
 		return "OR"
 	case NOT:
 		return "NOT"
+	case FORGET:
+		return "FORGET"
 	default:
 		return "ILLEGAL"
 	}
@@ -359,6 +362,8 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{LOCAL, word, start})
 			case "delocal":
 				toks = append(toks, Token{DELOCAL, word, start})
+			case "forget":
+				toks = append(toks, Token{FORGET, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

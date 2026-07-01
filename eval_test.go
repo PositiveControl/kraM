@@ -44,7 +44,7 @@ func TestEval(t *testing.T) {
 		{"if 2 > 1 { 10 } else { 20 }", "10"},
 		{"if 1 > 2 { 10 } else { 20 }", "20"},
 		{"if false { 1 } else if true { 2 } else { 3 }", "2"},
-		{"i = 0; while i < 3 { i = i + 1 }; i", "3"},
+		{"i = 0; while i < 3 { i += 1 }; i", "3"},
 		{"i = 0; n = 3; from i == 0 { i += 1 } loop { i += 1 } until i == n; i", "3"},
 		// reversible if + assert (exit assertion holds)
 		{"x = 0; if true { x += 5 } else { x -= 1 } assert x == 5; x", "5"},
@@ -71,6 +71,8 @@ func TestEval(t *testing.T) {
 		{"x = 2; local t = 10; t -= x; t", "8"},
 		{"local t = 3; delocal t = 3; 7", "7"},
 		{"a = 7; reverse { local t = 0; t += a; delocal t = a }; a", "7"},
+		// forget: the one irreversible escape hatch; erasing frees the name to re-introduce
+		{"x = 1; forget x; x = 2; x", "2"},
 		// logical operators
 		{"x = 5; x > 1 && x < 10", "true"},
 		{"x = 5; x > 10 || x == 5", "true"},
@@ -100,6 +102,11 @@ func TestEvalErrors(t *testing.T) {
 		{"x = 1.5; x ^= 1", "whole number"},
 		{"_ = 5", "cannot be assigned"},
 		{"x = 5; reverse { x = 9 }", "cannot reverse destructive assignment"},
+		// '=' is introduce-only (full-Janus): re-binding an existing name is an error
+		{"x = 1; x = 2", "cannot reassign"},
+		{"a = [1, 2]; a[0] = 9", "cannot assign to"},
+		{"forget x", "does not exist"},
+		{"x = 1; reverse { forget x }", "cannot reverse forget"},
 		{"if true { 1 } assert false", "exit assertion violated"},
 		{"from x == 0 { x += 1 } loop { x += 1 } until x == 1", "undefined variable"},
 		{"proc p { x = 1 }; uncall p", "cannot uncall"},

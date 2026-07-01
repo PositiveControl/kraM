@@ -104,22 +104,6 @@ func main() {
 			continue
 		}
 
-		if strings.HasPrefix(line, ":energy") {
-			code := strings.TrimSpace(strings.TrimPrefix(line, ":energy"))
-			ast, err := Parse(code)
-			if err != nil {
-				fmt.Println("parse error:", err)
-				continue
-			}
-			report, err := energyReport(ast, ip)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			fmt.Println(report)
-			continue
-		}
-
 		if strings.HasPrefix(line, ":gates") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":gates"))
 			ast, err := Parse(code)
@@ -291,13 +275,6 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(ip.HistoryString())
 	case ":env":
 		fmt.Println(ip.EnvString())
-	case ":strict":
-		ip.strict = !ip.strict
-		if ip.strict {
-			fmt.Println("strict mode ON — destructive overwrite is now an error")
-		} else {
-			fmt.Println("strict mode OFF — destructive overwrite warns")
-		}
 	case ":output":
 		fmt.Println(ip.OutputString())
 	case ":help":
@@ -305,7 +282,6 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":circuit CODE compile reversible code to a register-level netlist")
 		fmt.Println(":gates CODE   compile to elementary X/CNOT/Toffoli gates")
 		fmt.Println(":verify CODE  check the circuit matches the interpreter")
-		fmt.Println(":energy CODE  Landauer energy bound from garbage bits")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")
@@ -313,7 +289,6 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":history    show the timeline")
 		fmt.Println(":env        show current variables")
 		fmt.Println(":output     show the output buffer at the current time")
-		fmt.Println(":strict     toggle strict mode (overwrite = error)")
 		fmt.Println(":reset      clear all state and history")
 		fmt.Println(":exit       quit (also :quit, or Ctrl-D)")
 		fmt.Println(":help       this list")

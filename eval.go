@@ -45,15 +45,12 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		if v.Name == "_" {
 			return Value{}, fmt.Errorf("'_' is the last-result reference and cannot be assigned")
 		}
-		// First binding is reversible (undo just unsets it). Overwriting an
-		// existing value destroys information — the irreversible act — so warn
-		// and nudge toward the reversible updates (+= / -= / <=>).
+		// '=' introduces a fresh name. Re-binding an existing one would destroy
+		// its value — the irreversible act — so it is an error. Change a value
+		// with the reversible updates, or `forget` it first to erase it on
+		// purpose. This is the Janus discipline: no destructive assignment.
 		if old, exists := ip.get(v.Name); exists {
-			msg := fmt.Sprintf("destructive overwrite of %q (was %s) — irreversible; use += / -= / <=> to stay reversible", v.Name, old)
-			if ip.strict {
-				return Value{}, fmt.Errorf("strict mode: %s", msg)
-			}
-			ip.warn(msg)
+			return Value{}, fmt.Errorf("cannot reassign %q with '=' (it is %s) — '=' introduces a fresh name; use += / -= / ^= / <=> to change it, or `forget %s` to erase it first", v.Name, old, v.Name)
 		}
 		val, err := Eval(v.Value, ip)
 		if err != nil {
@@ -132,6 +129,18 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		ip.unset(v.Name)
 		return nilVal(), nil
+	case Forget:
+		// The one deliberate irreversible act: erase a variable. Recorded in the
+		// undo log so time travel still works, but structurally irreversible —
+		// reverse{}/uncall reject it, and it lowers to no gate. Unlike delocal it
+		// asserts nothing about the value: forget throws information away.
+		old, exists := ip.get(v.Name)
+		if !exists {
+			return Value{}, fmt.Errorf("forget %q: variable does not exist", v.Name)
+		}
+		ip.unset(v.Name)
+		ip.note(fmt.Sprintf("forgot %q (was %s) — irreversible erasure", v.Name, old))
+		return nilVal(), nil
 	case Swap:
 		return evalSwap(v, ip)
 	case ArrayLit:
@@ -151,21 +160,9 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		}
 		return arr.Arr[idx], nil
 	case IdxAssign:
-		arr, idx, err := evalIndexVar(ip, v.Name, v.Idx)
-		if err != nil {
-			return Value{}, err
-		}
-		val, err := Eval(v.Value, ip)
-		if err != nil {
-			return Value{}, err
-		}
-		msg := fmt.Sprintf("destructive overwrite of %s[%d] (was %s) — use += / -= / ^= / <=> to stay reversible", v.Name, idx, arr.Arr[idx])
-		if ip.strict {
-			return Value{}, fmt.Errorf("strict mode: %s", msg)
-		}
-		ip.warn(msg)
-		ip.set(v.Name, withElem(arr, idx, val))
-		return val, nil
+		// Element overwrite destroys the old element — irreversible, so rejected
+		// like scalar '='. Change an element with += / -= / ^= / <=>.
+		return Value{}, fmt.Errorf("cannot assign to %s[..] with '=' — destructive; use += / -= / ^= / <=> to change an element reversibly", v.Name)
 	case IdxUpdate:
 		arr, idx, err := evalIndexVar(ip, v.Name, v.Idx)
 		if err != nil {

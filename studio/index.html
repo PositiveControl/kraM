@@ -87,7 +87,6 @@
       <button data-compile="gates">:gates</button>
       <button data-compile="circuit">:circuit</button>
       <button data-compile="verify">:verify</button>
-      <button data-compile="energy">:energy</button>
       <button data-compile="invert">:invert</button>
     </div>
     <div class="pane" id="timeline">
@@ -128,6 +127,12 @@ print a`,
   "swap + xor": `x = 12; y = 7
 x <=> y
 x ^= 10`,
+  "forget — the one irreversible op": `# '=' introduces a name; it never overwrites (that would destroy info).
+# to change x, use += / -= / ^= / <=>. to destroy it on purpose, 'forget'.
+x = 5
+forget x     # deliberate erasure — the only irreversible operation
+x = 9        # the name is free to re-introduce
+print x`,
   "straight-line (try :gates)": `a = 1; b = 2
 a += b
 a <=> b`,
@@ -247,11 +252,16 @@ $("tl").oninput    = e => apply(JSON.parse(kramGoto(+e.target.value)));
 document.querySelectorAll("[data-compile]").forEach(btn => {
   btn.onclick = () => {
     if (!ready) return;
-    const fn = { gates: kramGates, circuit: kramCircuit, verify: kramVerify, energy: kramEnergy, invert: kramInvert }[btn.dataset.compile];
-    const r = JSON.parse(fn($("editor").value));
+    const fn = { gates: kramGates, circuit: kramCircuit, verify: kramVerify, invert: kramInvert }[btn.dataset.compile];
+    // Compile the selection if there is one, else the whole editor. The gate
+    // compiler only accepts reversible code, so select the reversible lines
+    // (skipping any `x = …` setup) — same as `:gates <just this code>` in the CLI.
+    const ta = $("editor");
+    const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd).trim();
+    const r = JSON.parse(fn(sel || ta.value));
     const c = $("circuit");
     if (r.ok) { c.className = ""; c.textContent = r.text || "(empty)"; }
-    else { c.className = "msg-err"; c.textContent = r.error; }
+    else { c.className = "msg-err"; c.textContent = r.error + (sel ? "" : "\n\n(tip: select just the reversible lines, then compile)"); }
   };
 });
 

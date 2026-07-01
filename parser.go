@@ -47,6 +47,12 @@ type Delocal struct {
 	Value Node
 }
 
+// Forget is the deliberate irreversible erasure of a variable: `forget x`. It
+// is the one escape hatch from the Janus discipline — the only way to destroy
+// information. Removes the binding (undoable for time travel, but not
+// structurally invertible: reverse{}/uncall reject it, and it has no gate).
+type Forget struct{ Name string }
+
 // ArrayLit builds an array value: [e0, e1, ...].
 type ArrayLit struct{ Elems []Node }
 
@@ -153,6 +159,7 @@ func (IdxAssign) node()      {}
 func (IdxUpdate) node()      {}
 func (Local) node()          {}
 func (Delocal) node()        {}
+func (Forget) node()         {}
 
 // ---- Pratt parser ----
 
@@ -239,6 +246,9 @@ func (p *Parser) parseStmt() Node {
 		name := p.declName()
 		p.expect(ASSIGN, "'='")
 		return Delocal{Name: name, Value: p.parseExpr(0)}
+	case FORGET:
+		p.advance()
+		return Forget{Name: p.declName()}
 	case PROC:
 		p.advance()
 		if p.cur().Kind != IDENT {

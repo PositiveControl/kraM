@@ -53,6 +53,8 @@ func substitute(n Node, m map[string]string) Node {
 		return Local{Name: r(v.Name), Value: substitute(v.Value, m)}
 	case Delocal:
 		return Delocal{Name: r(v.Name), Value: substitute(v.Value, m)}
+	case Forget:
+		return Forget{Name: r(v.Name)}
 	case Print:
 		return Print{Value: substitute(v.Value, m)}
 	case Assert:

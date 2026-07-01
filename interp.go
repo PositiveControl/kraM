@@ -115,7 +115,6 @@ type Interp struct {
 	warnings []string // advisory messages from the last evaluation (not state)
 	notes    []string // informational messages (control-flow summaries)
 	cfDepth  int       // control-flow nesting; only depth-1 statements emit a note
-	strict   bool      // when true, destructive overwrite is an error, not a warning
 	last     Value     // last non-nil result; read by the bare identifier '_'
 	procs    map[string]ProcDef // procedure definitions; not state, not logged
 }
@@ -144,7 +143,6 @@ func (ip *Interp) clone() *Interp {
 		c.procs[k] = p
 	}
 	c.last = ip.last
-	c.strict = ip.strict
 	return c
 }
 

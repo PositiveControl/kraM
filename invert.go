@@ -90,6 +90,8 @@ func invert(n Node) (Node, error) {
 		}
 		return ReversibleLoop{Entry: v.Exit, Do: do, Rest: rest, Exit: v.Entry}, nil
 
+	case Forget:
+		return nil, fmt.Errorf("cannot reverse forget %q — erasure is deliberately irreversible", v.Name)
 	case Assign:
 		return nil, fmt.Errorf("cannot reverse destructive assignment of %q; use += / -= / <=>", v.Name)
 	case IdxAssign:
