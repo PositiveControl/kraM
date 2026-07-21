@@ -88,6 +88,22 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":qasm") {
+			code := strings.TrimSpace(strings.TrimPrefix(line, ":qasm"))
+			ast, err := Parse(code)
+			if err != nil {
+				fmt.Println("parse error:", err)
+				continue
+			}
+			bc, err := compileBits(ast, ip)
+			if err != nil {
+				fmt.Println("not compilable to a circuit:", err)
+				continue
+			}
+			fmt.Print(qasmProgram(bc))
+			continue
+		}
+
 		if strings.HasPrefix(line, ":grover") {
 			args := strings.TrimSpace(strings.TrimPrefix(line, ":grover"))
 			report, err := groverCommand(args)
@@ -310,7 +326,8 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":gates CODE   compile to elementary X/CNOT/Toffoli gates")
 		fmt.Println(":verify CODE  check the circuit matches the interpreter")
 		fmt.Println(":energy CODE  Landauer energy bound from garbage bits")
-		fmt.Println(":grover BITS COND [iters=K]  Grover-search a compiled oracle for COND")
+		fmt.Println(":grover BITS COND [iters=K] [qasm]  Grover-search a compiled oracle for COND")
+		fmt.Println(":qasm CODE    export a compiled program as OpenQASM 2.0")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")

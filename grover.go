@@ -220,6 +220,11 @@ func groverCommand(args string) (string, error) {
 		return "", fmt.Errorf("usage: :grover <bits> <condition> [iters=<k>]")
 	}
 	condSrc := strings.TrimSpace(fields[1])
+	asQasm := false
+	if strings.HasSuffix(condSrc, " qasm") {
+		asQasm = true
+		condSrc = strings.TrimSpace(strings.TrimSuffix(condSrc, " qasm"))
+	}
 	iters := -1
 	if i := strings.LastIndex(condSrc, "iters="); i >= 0 {
 		if _, err := fmt.Sscanf(condSrc[i:], "iters=%d", &iters); err != nil || iters < 0 {
@@ -227,7 +232,34 @@ func groverCommand(args string) (string, error) {
 		}
 		condSrc = strings.TrimSpace(condSrc[:i])
 	}
+	if asQasm {
+		return groverQasmReport(condSrc, width, iters)
+	}
 	return groverReport(condSrc, width, iters)
+}
+
+// groverQasmReport renders the full Grover circuit as OpenQASM 2.0. iters < 0
+// means optimal, which needs the truth table (M) first.
+func groverQasmReport(condSrc string, width, iters int) (string, error) {
+	cond, warn, err := parseCond(condSrc, width)
+	if err != nil {
+		return "", err
+	}
+	if iters < 0 {
+		_, _, r, _, err := groverPrep(condSrc, width, -1)
+		if err != nil {
+			return "", err
+		}
+		iters = r.Optimal
+	}
+	text, err := qasmGrover(cond, condSrc, width, iters)
+	if err != nil {
+		return "", err
+	}
+	if warn != "" {
+		text = "// " + warn + "\n" + text
+	}
+	return text, nil
 }
 
 // groverReport renders the REPL text: oracle stats, per-iteration success
