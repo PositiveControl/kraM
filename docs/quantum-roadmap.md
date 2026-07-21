@@ -89,14 +89,16 @@ k/r for the order r of a.
   so the oracle is built by the language rather than analyzed in closed
   form. Tracked here as future work.
 
-## 6. Studio parity — next up
+## 6. Studio parity (shipped)
 
-`:bv`, `:dj`, `:count`, `:simon`, `:shor` are REPL-only; the Studio has a
-Grover pane only. The WASM bridge (`wasm.go`) already exists — add panes for
-the new algorithms so the whole arc is visible in the browser: BV/DJ
-single-query circuits with their QASM download, counting's readout
-distribution, Simon's equation-by-equation elimination, Shor's peak
-spectrum and continued-fraction trace.
+One "quantum algorithms" pane drives all five commands through a single
+WASM bridge (`kramAlgo`), rendering the exact same reports the REPL prints,
+with QASM download for the hardware-suitable ones (bv/dj/simon). Selecting
+an algorithm swaps in its default arguments and usage hint.
+
+Still open if wanted: bespoke visualizations (counting's readout
+distribution as bars, Shor's peak spectrum, Simon's elimination steps) —
+the reports already carry ASCII bars, so this is polish, not parity.
 
 ## Ruled out (for now)
 

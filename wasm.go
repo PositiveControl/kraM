@@ -37,6 +37,7 @@ func main() {
 	reg("kramQasm", func(a []js.Value) any { return kramCompile(a[0].String(), "qasm") })
 	reg("kramGrover", func(a []js.Value) any { return kramGrover(a[0].String(), a[1].Int(), a[2].Int()) })
 	reg("kramGroverQasm", func(a []js.Value) any { return kramGroverQasm(a[0].String(), a[1].Int(), a[2].Int()) })
+	reg("kramAlgo", func(a []js.Value) any { return kramAlgo(a[0].String(), a[1].String()) })
 	select {} // keep the instance alive for callbacks
 }
 
@@ -75,6 +76,25 @@ func kramGrover(cond string, bits, iters int) string {
 
 func kramGroverQasm(cond string, bits, iters int) string {
 	text, err := groverQasmReport(cond, bits, iters)
+	if err != nil {
+		return marshal(map[string]any{"ok": false, "error": err.Error()})
+	}
+	return marshal(map[string]any{"ok": true, "text": text})
+}
+
+// kramAlgo runs any REPL quantum command by name with its raw argument
+// string — the studio's "quantum algorithms" pane is a thin front-end over
+// the exact same reports the REPL prints (append " qasm" for exports).
+func kramAlgo(name, args string) string {
+	cmds := map[string]func(string) (string, error){
+		"bv": bvCommand, "dj": djCommand, "count": countCommand,
+		"simon": simonCommand, "shor": shorCommand,
+	}
+	cmd, ok := cmds[name]
+	if !ok {
+		return marshal(map[string]any{"ok": false, "error": "unknown algorithm: " + name})
+	}
+	text, err := cmd(args)
 	if err != nil {
 		return marshal(map[string]any{"ok": false, "error": err.Error()})
 	}

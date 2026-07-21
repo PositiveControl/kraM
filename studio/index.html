@@ -161,6 +161,28 @@
         </div>
       </div>
     </div>
+    <div class="pane" style="flex:2">
+      <div class="hd">
+        quantum algorithms
+        <span class="grow"></span>
+        <span id="qa-hint" style="text-transform:none;letter-spacing:0"></span>
+      </div>
+      <div class="body">
+        <div class="gr-controls">
+          <select id="qa-algo" aria-label="algorithm">
+            <option value="bv" selected>bv — Bernstein–Vazirani</option>
+            <option value="dj">dj — Deutsch–Jozsa</option>
+            <option value="count">count — quantum counting</option>
+            <option value="simon">simon — hidden XOR period</option>
+            <option value="shor">shor — factor a toy N</option>
+          </select>
+          <input id="qa-args" type="text" value="6 37" spellcheck="false" aria-label="arguments">
+          <button id="qa-run">Run</button>
+          <button id="qa-qasm">⬇ QASM</button>
+        </div>
+        <pre id="qa-out" class="msg-note">pick an algorithm — same reports as the REPL commands</pre>
+      </div>
+    </div>
   </div>
 </main>
 
@@ -405,6 +427,41 @@ $("gr-qasm").onclick = () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
   a.download = "grover.qasm";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+// ---- quantum algorithms pane ----
+const QA = {
+  bv:    { args: "6 37",              hint: "BITS S — one query recovers S",            qasm: true },
+  dj:    { args: "3 x < 4",           hint: "BITS COND — constant or balanced",         qasm: true },
+  count: { args: "4 x == 9 || x == 3", hint: "BITS COND [t=K] — how many solutions",    qasm: false },
+  simon: { args: "5 19",              hint: "BITS S — XOR period in O(BITS) runs",      qasm: true },
+  shor:  { args: "15 a=7",            hint: "N [a=K] — factor via period-finding",      qasm: false },
+};
+function qaSync() {
+  const a = QA[$("qa-algo").value];
+  $("qa-args").value = a.args;
+  $("qa-hint").textContent = a.hint;
+  $("qa-qasm").disabled = !a.qasm;
+}
+$("qa-algo").onchange = qaSync;
+qaSync();
+$("qa-run").onclick = () => {
+  if (!ready) return;
+  const r = JSON.parse(kramAlgo($("qa-algo").value, $("qa-args").value));
+  const out = $("qa-out");
+  out.className = r.ok ? "" : "msg-err";
+  out.textContent = r.ok ? r.text : r.error;
+};
+$("qa-qasm").onclick = () => {
+  if (!ready) return;
+  const algo = $("qa-algo").value;
+  const r = JSON.parse(kramAlgo(algo, $("qa-args").value + " qasm"));
+  if (!r.ok) { const o = $("qa-out"); o.className = "msg-err"; o.textContent = r.error; return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
+  a.download = algo + ".qasm";
   a.click();
   URL.revokeObjectURL(a.href);
 };
