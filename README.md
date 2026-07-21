@@ -205,15 +205,45 @@ not one circuit — compile the single forward pass, not the whole file.
 `:gates CODE` — compile to elementary X / CNOT / Toffoli gates (adds use a Cuccaro adder)
 `:verify CODE` — check the compiled circuit matches the interpreter
 `:energy CODE` — Landauer energy bound from the circuit's garbage bits
+`:grover BITS COND [iters=K] [qasm]` — Grover-search a compiled oracle (see below)
+`:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
 Shorthands: `_` = last result, `!!` = last line (e.g. `reverse { !! }`).
+
+## Quantum: Grover search on compiled oracles
+
+kraM's `if`-condition compiler is, accidentally on purpose, a quantum oracle
+synthesizer: `condToBit` computes any comparison/`&&`/`||`/`!` condition into a
+single marker bit and uncomputes *all* of its scratch — the compute-copy-uncompute
+discipline quantum oracles require. `:grover` exploits that:
+
+```
+> :grover 4 x == 9 || x == 3
+oracle: x == 9 || x == 3 over 4-bit x — 47 gates, 10 wires (4 input + 1 marker + 5 ancilla)
+search space N=16, solutions M=2 [3 9]
+optimal iterations k* = 2
+  after  0 iterations: P(marked) = 0.1250 █████
+  after  1 iterations: P(marked) = 0.7812 ███████████████████████████████
+  after  2 iterations: P(marked) = 0.9453 ██████████████████████████████████████
+```
+
+The simulation is exact, not approximate: the oracle is verified garbage-free
+for every basis state and the marker is only ever a gate target, so the
+amplitude evolution over the 2^bits inputs equals the full statevector's
+(cross-checked in tests by simulating the exported circuit wire-for-wire).
+
+Add `qasm` to export the complete Grover circuit — superposition layer, phase
+kickback, diffusion — as OpenQASM 2.0, and run it on real IBM Quantum hardware:
+see [hardware/](hardware/). The Studio has a matching pane: type a condition,
+watch the amplitude bars converge, download the `.qasm`.
 
 ## Status
 
 Early sketch. `:circuit` is a register-level view (whole ADD / SUB / SWAP /
 CNOT blocks); `:gates` decomposes to real elementary gates (X / CNOT / Toffoli,
-fixed 16-bit registers, arithmetic mod 2^16). Both unroll reversible loops and
+16-bit registers by default — `:grover`/`:qasm` compile narrower ones so they
+fit on real quantum hardware — arithmetic mod 2^width). Both unroll reversible loops and
 inline procedures against the current state; `:circuit` doesn't yet lower a
 reversible `if` (use `:gates` for that). `:gates` lowers procedures (inlined) and reversible `if`s — conditions can
 compare a variable to a constant or to another variable (`== != < > <= >=`),
