@@ -206,6 +206,7 @@ not one circuit — compile the single forward pass, not the whole file.
 `:verify CODE` — check the compiled circuit matches the interpreter
 `:energy CODE` — Landauer energy bound from the circuit's garbage bits
 `:grover BITS COND [iters=K] [qasm]` — Grover-search a compiled oracle (see below)
+`:bv BITS S [qasm]` — Bernstein–Vazirani: recover hidden S in one oracle query
 `:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
@@ -237,6 +238,12 @@ Add `qasm` to export the complete Grover circuit — superposition layer, phase
 kickback, diffusion — as OpenQASM 2.0, and run it on real IBM Quantum hardware:
 see [hardware/](hardware/). The Studio has a matching pane: type a condition,
 watch the amplitude bars converge, download the `.qasm`.
+
+`:bv BITS S` is Bernstein–Vazirani: a hidden string S is recovered from the
+linear oracle f(x) = S·x (mod 2) in a single query (classically it takes BITS
+queries). The oracle is a bare CNOT chain, so unlike Grover it survives real
+hardware nearly intact. More algorithms queued in
+[docs/quantum-roadmap.md](docs/quantum-roadmap.md).
 
 ## Status
 

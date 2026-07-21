@@ -115,6 +115,17 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":bv") {
+			args := strings.TrimSpace(strings.TrimPrefix(line, ":bv"))
+			report, err := bvCommand(args)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println(report)
+			continue
+		}
+
 		if strings.HasPrefix(line, ":verify") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":verify"))
 			ast, err := Parse(code)
@@ -327,6 +338,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":verify CODE  check the circuit matches the interpreter")
 		fmt.Println(":energy CODE  Landauer energy bound from garbage bits")
 		fmt.Println(":grover BITS COND [iters=K] [qasm]  Grover-search a compiled oracle for COND")
+		fmt.Println(":bv BITS S [qasm]  Bernstein-Vazirani: recover hidden S in one oracle query")
 		fmt.Println(":qasm CODE    export a compiled program as OpenQASM 2.0")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
