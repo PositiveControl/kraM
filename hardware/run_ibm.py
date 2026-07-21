@@ -4,12 +4,13 @@
 Usage:
     pip install qiskit qiskit-ibm-runtime matplotlib
     python -c "from qiskit_ibm_runtime import QiskitRuntimeService; \
-               QiskitRuntimeService.save_account(channel='ibm_quantum_platform', token='YOUR_TOKEN')"
+               QiskitRuntimeService.save_account(channel='ibm_quantum_platform', \
+                                                 token='YOUR_API_KEY', instance='YOUR_CRN')"
     python run_ibm.py --qasm grover.qasm [--backend ibm_brisbane] [--shots 4096]
 
-Export the circuit first:  :grover 3 x == 5 qasm  (REPL) or the Studio's
-"⬇ QASM" button. Keep it small — 3 bits, one equality, 1 iteration — so the
-transpiled Toffoli chains stay shallow enough for today's noise.
+Export the circuit first:  :grover 3 x == 5 iters=1 qasm  (REPL) or the
+Studio's "⬇ QASM" button. Keep it small — 3 bits, one equality, iters=1 —
+so the transpiled Toffoli chains stay shallow enough for today's noise.
 """
 
 import argparse
