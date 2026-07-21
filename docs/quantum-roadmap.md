@@ -52,17 +52,23 @@ encodes M/N. Thematic rhyme with `range.kr`, which counts hits classically.
 - Studio idea still open: visualize the estimated phase converging as
   counting qubits are added.
 
-## 4. Simon's algorithm — `:simon`
+## 4. Simon's algorithm — `:simon` (shipped)
 
 Hidden XOR period: f(x) = f(x ⊕ s) for all x. Each run yields a random y
 with y·s = 0; after ~n runs, solving the linear system over GF(2) recovers s.
 Exponential quantum/classical separation; the direct ancestor of Shor.
 
-- Needs a function-into-register oracle (f(x) written to an output register)
-  rather than a bit-flip marker — kraM procedures compile to exactly that
-  shape.
-- Classical post-processing: Gaussian elimination mod 2.
-- Effort: medium-large (new oracle shape + linear algebra + multi-shot flow).
+- Shipped with the standard oracle f(x) = x ⊕ (x_l ? s : 0) (l = lowest set
+  bit of s): a CNOT copy plus a controlled XOR of s — the first
+  function-into-register oracle in the codebase, and all CNOTs, so it runs
+  well on hardware.
+- The REPL flow samples y from {y : y·s = 0} — TestSimonStatevector proves
+  gate-for-gate that this is exactly the circuit's output distribution —
+  then row-reduces over GF(2), showing every equation. The rank-(n-1)
+  candidate is settled by the textbook final step, one classical
+  verification query f(0) =? f(candidate), which also disambiguates s = 0
+  (injective f).
+- Promise f(x) = f(x⊕s) is verified exhaustively before running.
 
 ## 5. Shor period-finding (toy) — `:shor`
 

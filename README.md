@@ -209,6 +209,7 @@ not one circuit — compile the single forward pass, not the whole file.
 `:bv BITS S [qasm]` — Bernstein–Vazirani: recover hidden S in one oracle query
 `:dj BITS COND [qasm]` — Deutsch–Jozsa: COND constant or balanced, in one query
 `:count BITS COND [t=K]` — quantum counting: estimate how many x satisfy COND
+`:simon BITS S [qasm]` — Simon: recover hidden XOR period S in O(BITS) queries
 `:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
@@ -256,8 +257,15 @@ operator estimates *how many* x satisfy COND without finding them — the
 quantum sibling of `range.kr`'s classical hit-counting. The report shows the
 exact QPE readout distribution (cross-checked in tests against a direct
 unitary simulation) and the M it rounds to. Simulator-only: controlled-Grover
-plus QFT is far beyond today's hardware depth budgets. More algorithms queued
-in [docs/quantum-roadmap.md](docs/quantum-roadmap.md).
+plus QFT is far beyond today's hardware depth budgets.
+
+`:simon BITS S` is Simon's algorithm: a hidden XOR period (f(x) = f(x⊕S))
+recovered in O(BITS) circuit runs plus Gaussian elimination over GF(2), where
+classical search needs ~2^(BITS/2) queries — the exponential separation that
+led to Shor. Each run yields a random y with y·S = 0; the report shows every
+equation and the elimination verdict. The oracle is all CNOTs, so `qasm`
+exports run well on real hardware. More algorithms queued in
+[docs/quantum-roadmap.md](docs/quantum-roadmap.md).
 
 ## Status
 
