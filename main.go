@@ -88,6 +88,17 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":grover") {
+			args := strings.TrimSpace(strings.TrimPrefix(line, ":grover"))
+			report, err := groverCommand(args)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println(report)
+			continue
+		}
+
 		if strings.HasPrefix(line, ":verify") {
 			code := strings.TrimSpace(strings.TrimPrefix(line, ":verify"))
 			ast, err := Parse(code)
@@ -299,6 +310,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":gates CODE   compile to elementary X/CNOT/Toffoli gates")
 		fmt.Println(":verify CODE  check the circuit matches the interpreter")
 		fmt.Println(":energy CODE  Landauer energy bound from garbage bits")
+		fmt.Println(":grover BITS COND [iters=K]  Grover-search a compiled oracle for COND")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")
 		fmt.Println(":undo       step back one mutation")
