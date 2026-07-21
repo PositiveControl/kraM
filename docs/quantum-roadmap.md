@@ -70,15 +70,33 @@ Exponential quantum/classical separation; the direct ancestor of Shor.
   (injective f).
 - Promise f(x) = f(x⊕s) is verified exhaustively before running.
 
-## 5. Shor period-finding (toy) — `:shor`
+## 5. Shor period-finding (toy) — `:shor` (shipped)
 
 Factor 15 or 21 in the simulator. The quantum core is period-finding over
-reversible modular exponentiation — and reversible arithmetic is kraM's whole
-thing: `a*x mod N` written as kraM code, compiled to a circuit, would be the
-flagship "homemade language factors a number" demo.
+modular multiplication: QPE on U: |x⟩ → |a·x mod N⟩, whose eigenphases are
+k/r for the order r of a.
 
-- Needs: QFT, controlled modular multiplication, ~10+ qubits.
-- Simulator-only, and the largest effort on the list. Long-term flagship.
+- Shipped as exact measurement statistics, the same closed form as `:count`:
+  the start state |1⟩ decomposes over U's r eigenvectors with weight exactly
+  1/r, so the readout distribution is a 1/r-mix of QPE kernels. Sampled
+  readouts go through continued fractions (lcm-combined across runs, then
+  reduced to the smallest verifying divisor) and gcd(a^(r/2) ± 1, N).
+- Classical preamble handled: even N, prime N, perfect powers. Unlucky a
+  (odd r, or a^(r/2) ≡ -1) reported as the textbook retry cases.
+- Tested exhaustively: every coprime a for N ∈ {15, 21, 33, 35, 39}.
+- **Still open (the flagship gate-level story):** compile `a*x mod N` as
+  reversible kraM arithmetic into an actual controlled-multiplier circuit,
+  so the oracle is built by the language rather than analyzed in closed
+  form. Tracked here as future work.
+
+## 6. Studio parity — next up
+
+`:bv`, `:dj`, `:count`, `:simon`, `:shor` are REPL-only; the Studio has a
+Grover pane only. The WASM bridge (`wasm.go`) already exists — add panes for
+the new algorithms so the whole arc is visible in the browser: BV/DJ
+single-query circuits with their QASM download, counting's readout
+distribution, Simon's equation-by-equation elimination, Shor's peak
+spectrum and continued-fraction trace.
 
 ## Ruled out (for now)
 

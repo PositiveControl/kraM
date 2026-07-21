@@ -148,6 +148,17 @@ func main() {
 			continue
 		}
 
+		if strings.HasPrefix(line, ":shor") {
+			args := strings.TrimSpace(strings.TrimPrefix(line, ":shor"))
+			report, err := shorCommand(args)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println(report)
+			continue
+		}
+
 		if strings.HasPrefix(line, ":simon") {
 			args := strings.TrimSpace(strings.TrimPrefix(line, ":simon"))
 			report, err := simonCommand(args)
@@ -375,6 +386,7 @@ func runMeta(line string, ip *Interp) {
 		fmt.Println(":dj BITS COND [qasm]  Deutsch-Jozsa: constant or balanced in one oracle query")
 		fmt.Println(":count BITS COND [t=K]  quantum counting: estimate how many x satisfy COND")
 		fmt.Println(":simon BITS S [qasm]  Simon: recover hidden XOR period S from O(BITS) queries")
+		fmt.Println(":shor N [a=K] [t=K]  Shor period-finding: factor toy N via QPE on a·x mod N")
 		fmt.Println(":qasm CODE    export a compiled program as OpenQASM 2.0")
 		fmt.Println(":load CODE  load a program to step through")
 		fmt.Println(":step       run the next single mutation")

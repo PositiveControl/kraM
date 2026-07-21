@@ -210,6 +210,7 @@ not one circuit — compile the single forward pass, not the whole file.
 `:dj BITS COND [qasm]` — Deutsch–Jozsa: COND constant or balanced, in one query
 `:count BITS COND [t=K]` — quantum counting: estimate how many x satisfy COND
 `:simon BITS S [qasm]` — Simon: recover hidden XOR period S in O(BITS) queries
+`:shor N [a=K] [t=K]` — Shor period-finding: factor toy N via QPE on a·x mod N
 `:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
@@ -264,7 +265,14 @@ recovered in O(BITS) circuit runs plus Gaussian elimination over GF(2), where
 classical search needs ~2^(BITS/2) queries — the exponential separation that
 led to Shor. Each run yields a random y with y·S = 0; the report shows every
 equation and the elimination verdict. The oracle is all CNOTs, so `qasm`
-exports run well on real hardware. More algorithms queued in
+exports run well on real hardware.
+
+`:shor N` factors a toy composite by Shor period-finding: QPE on the
+permutation |x⟩ → |a·x mod N⟩ yields readouts near 2^t·k/r, continued
+fractions recover the order r, and gcd(a^(r/2) ± 1, N) splits N. The readout
+distribution is exact (same closed form as `:count`); the classical preamble
+(even, prime, perfect-power N) and the two textbook unlucky-a cases are all
+reported honestly. `:shor 15` → 15 = 3 × 5. More in
 [docs/quantum-roadmap.md](docs/quantum-roadmap.md).
 
 ## Status
