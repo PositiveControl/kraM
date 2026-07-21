@@ -69,6 +69,11 @@ Exponential quantum/classical separation; the direct ancestor of Shor.
   verification query f(0) =? f(candidate), which also disambiguates s = 0
   (injective f).
 - Promise f(x) = f(x⊕s) is verified exhaustively before running.
+- Measured on `ibm_marrakesh` (5 bits, s=19, 4096 shots, transpiled depth
+  11): the 16 top outcomes are exactly the 16 strings with y·19 ≡ 0, holding
+  94.6% of the shots; every violating string sits in the sub-1% noise floor.
+  GF(2) elimination on any few of them recovers s=19. Sample export:
+  `hardware/simon.qasm`.
 
 ## 5. Shor period-finding (toy) — `:shor` (shipped)
 
