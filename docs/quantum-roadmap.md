@@ -27,6 +27,11 @@ quantum algorithm (1992).
 - Strong kraM angle: the user writes *any* condition, the compiler proves the
   oracle garbage-free, DJ classifies it in a single evaluation. Measure all
   zeros → constant, anything else → balanced.
+- Measured on `ibm_marrakesh` (`x < 4`, 3 bits, 4096 shots): 84% nonzero →
+  correct **balanced** verdict, with the ideal peak x=4 on top at 37.5%. The
+  comparator oracle (48 gates, 12 wires) transpiled to depth 446 — deeper
+  than Grover — so the noise floor is high even though the verdict is clear.
+  Sample export: `hardware/dj.qasm`.
 - Shares the single-query harness with `:bv`. Effort: small.
 
 ## 3. Quantum counting — `:count`

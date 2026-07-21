@@ -1,0 +1,68 @@
+OPENQASM 2.0;
+include "qelib1.inc";
+// Deutsch-Jozsa: is x < 4 constant or balanced over 3-bit x? One oracle query
+// input x: q[0..2] little-endian; marker q[3]; rest ancilla
+// all c bits zero -> constant; anything else -> balanced
+qreg q[12];
+creg c[3];
+h q[0];
+h q[1];
+h q[2];
+x q[3];
+h q[3];
+cx q[0],q[4];
+cx q[1],q[5];
+cx q[2],q[6];
+x q[9];
+cx q[7],q[4];
+cx q[7],q[10];
+ccx q[10],q[4],q[7];
+cx q[8],q[5];
+cx q[8],q[7];
+ccx q[7],q[5],q[8];
+cx q[9],q[6];
+cx q[9],q[8];
+ccx q[8],q[6],q[9];
+cx q[9],q[11];
+ccx q[8],q[6],q[9];
+cx q[9],q[8];
+cx q[8],q[6];
+ccx q[7],q[5],q[8];
+cx q[8],q[7];
+cx q[7],q[5];
+ccx q[10],q[4],q[7];
+cx q[7],q[10];
+cx q[10],q[4];
+cx q[11],q[3];
+cx q[10],q[4];
+cx q[7],q[10];
+ccx q[10],q[4],q[7];
+cx q[7],q[5];
+cx q[8],q[7];
+ccx q[7],q[5],q[8];
+cx q[8],q[6];
+cx q[9],q[8];
+ccx q[8],q[6],q[9];
+cx q[9],q[11];
+ccx q[8],q[6],q[9];
+cx q[9],q[8];
+cx q[9],q[6];
+ccx q[7],q[5],q[8];
+cx q[8],q[7];
+cx q[8],q[5];
+ccx q[10],q[4],q[7];
+cx q[7],q[10];
+cx q[7],q[4];
+x q[9];
+cx q[2],q[6];
+cx q[1],q[5];
+cx q[0],q[4];
+x q[3];
+h q[0];
+h q[1];
+h q[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+measure q[2] -> c[2];
+
+
