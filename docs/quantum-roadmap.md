@@ -13,6 +13,9 @@ measure — the result is s, deterministically.
 
 - Oracle is a bare CNOT chain: shallow, transpiles cleanly, near-ideal
   results on real hardware — a stronger hardware demo than Grover.
+- Measured on `ibm_marrakesh` (6 bits, s=37, 4096 shots): **x=37 at 96.3%**,
+  transpiled depth 10 vs Grover's 178. The stray ~1% states are single-bit
+  readout flips of 37. Sample export: `hardware/bv.qasm`.
 - Effort: small. Reuses the qop/QASM/statevector infrastructure.
 
 ## 2. Deutsch–Jozsa — `:dj`
