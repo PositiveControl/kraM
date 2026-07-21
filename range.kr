@@ -1,0 +1,31 @@
+# kraMLang reversible range-count.   Run:  ./kram range.kr
+# Docs: docs/demos.md
+#
+# Counts how many array elements fall in [lo, hi] — a compound condition,
+# `xs[i] >= lo && xs[i] <= hi`. Counting is many-to-one (irreversible), so, like
+# the sort and gcd demos, each element records whether it was counted into a
+# trace; that recorded bit is the reversible-if exit assertion. `uncall` replays
+# the trace and restores the count to zero.
+
+xs = [3, 8, 1, 6, 4]
+lo = 3
+hi = 6
+n = 5
+i = 0
+count = 0
+hit = [0, 0, 0, 0, 0]
+
+proc countrange {
+  from i == 0 { } loop {
+    if xs[i] >= lo && xs[i] <= hi { count += 1; hit[i] += 1 } else { } assert hit[i] == 1
+    i += 1
+  } until i == n
+}
+
+print "array: " + xs
+print "range: [" + lo + ", " + hi + "]"
+call countrange
+print "count: " + count
+print "trace: " + hit
+uncall countrange
+print "uncalled count: " + count

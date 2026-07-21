@@ -1,3 +1,6 @@
+# OS noise
+.DS_Store
+
 # Binaries
 /kram
 /krapl
