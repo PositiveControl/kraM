@@ -207,6 +207,7 @@ not one circuit — compile the single forward pass, not the whole file.
 `:energy CODE` — Landauer energy bound from the circuit's garbage bits
 `:grover BITS COND [iters=K] [qasm]` — Grover-search a compiled oracle (see below)
 `:bv BITS S [qasm]` — Bernstein–Vazirani: recover hidden S in one oracle query
+`:dj BITS COND [qasm]` — Deutsch–Jozsa: COND constant or balanced, in one query
 `:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
@@ -242,8 +243,13 @@ watch the amplitude bars converge, download the `.qasm`.
 `:bv BITS S` is Bernstein–Vazirani: a hidden string S is recovered from the
 linear oracle f(x) = S·x (mod 2) in a single query (classically it takes BITS
 queries). The oracle is a bare CNOT chain, so unlike Grover it survives real
-hardware nearly intact. More algorithms queued in
-[docs/quantum-roadmap.md](docs/quantum-roadmap.md).
+hardware nearly intact.
+
+`:dj BITS COND` is Deutsch–Jozsa: one query decides whether COND is constant
+or balanced (classically: 2^(BITS-1)+1 evaluations worst case). Measure all
+zeros → constant, anything else → balanced. Conditions that are neither break
+the promise; the report says so and gives the exact P(all zeros). More
+algorithms queued in [docs/quantum-roadmap.md](docs/quantum-roadmap.md).
 
 ## Status
 

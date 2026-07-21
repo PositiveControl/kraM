@@ -18,7 +18,7 @@ measure — the result is s, deterministically.
   readout flips of 37. Sample export: `hardware/bv.qasm`.
 - Effort: small. Reuses the qop/QASM/statevector infrastructure.
 
-## 2. Deutsch–Jozsa — `:dj`
+## 2. Deutsch–Jozsa — `:dj` (shipped)
 
 Promise: f is either constant or balanced. One query decides which;
 classically it takes 2^(n-1)+1 evaluations in the worst case. The original
