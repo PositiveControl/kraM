@@ -105,6 +105,17 @@ an **ancilla register** (allocated, used, then uncomputed and freed):
 > delocal t = x   # remove t, asserting it now equals x
 ```
 
+The compute-copy-uncompute pattern (Bennett's trick) has dedicated syntax:
+`with` runs its compute block, then the body, then the compute block's
+*structural inverse*, and delocals the ancilla — the uncompute is derived from
+the program text, so it can never drift out of sync with the compute. The
+compute block must be reversible; that is checked at parse time:
+
+```
+> with t = 0 { t += x; t += x } do { out += t }
+# ≡ local t = 0; t += x; t += x; out += t; t -= x; t -= x; delocal t = 0
+```
+
 …and step through time:
 
 ```

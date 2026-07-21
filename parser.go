@@ -249,6 +249,8 @@ func (p *Parser) parseStmt() Node {
 	case FORGET:
 		p.advance()
 		return Forget{Name: p.declName()}
+	case WITH:
+		return p.parseWith()
 	case PROC:
 		p.advance()
 		if p.cur().Kind != IDENT {
@@ -377,6 +379,37 @@ func (p *Parser) parseBlock() Node {
 	}
 	p.advance()
 	return Block{Stmts: stmts}
+}
+
+// parseWith: `with x = e { compute } do { body }` — Bennett's compute-copy-
+// uncompute as syntax. Desugars at parse time to
+//   local x = e; compute; body; inverse(compute); delocal x = e
+// so eval, reverse{}, uncall, time travel, and circuit lowering all treat it
+// as the sequence it means. Inverting compute here makes reversibility of the
+// compute block a parse-time check.
+func (p *Parser) parseWith() Node {
+	p.advance() // 'with'
+	name := p.declName()
+	p.expect(ASSIGN, "'='")
+	val := p.parseExpr(0)
+	comp := p.parseBlock()
+	p.expect(DO, "'do'")
+	body := p.parseBlock()
+	if p.err != nil {
+		return nil
+	}
+	uncomp, err := invert(comp)
+	if err != nil {
+		p.fail("with: compute block is not reversible: %v", err)
+		return nil
+	}
+	return Block{Stmts: []Node{
+		Local{Name: name, Value: val},
+		comp,
+		body,
+		uncomp,
+		Delocal{Name: name, Value: val},
+	}}
 }
 
 // parseIf: `if cond { ... }` with optional `else { ... }` or `else if ...`.

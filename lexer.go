@@ -56,6 +56,8 @@ const (
 	OR      // ||
 	NOT     // !  (boolean negation)
 	FORGET  // forget (deliberate irreversible erasure of a variable)
+	WITH    // with (compute-copy-uncompute: with x = e { compute } do { body })
+	DO      // do (body of a with block)
 )
 
 type Token struct {
@@ -164,6 +166,10 @@ func kindName(k TokKind) string {
 		return "NOT"
 	case FORGET:
 		return "FORGET"
+	case WITH:
+		return "WITH"
+	case DO:
+		return "DO"
 	default:
 		return "ILLEGAL"
 	}
@@ -364,6 +370,10 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{DELOCAL, word, start})
 			case "forget":
 				toks = append(toks, Token{FORGET, word, start})
+			case "with":
+				toks = append(toks, Token{WITH, word, start})
+			case "do":
+				toks = append(toks, Token{DO, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

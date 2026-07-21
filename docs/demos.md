@@ -170,6 +170,10 @@ uncalled  = 0
   garbage); `delocal`'s value assertion *forces* you to uncompute it.
 - **By-reference procedures** — `f(inp, out)` reads its input and adds to its
   output in place.
+- **`with`/`do` syntax** — the second half does the same computation with
+  `with t = 0 { …compute… } do { out += t }`: the uncompute and `delocal` are
+  generated from the compute block's structural inverse, so the cleanup cannot
+  drift out of sync with the build-up.
 - **Lowers to a circuit** — every step (`+= -=`, the local) compiles, so
   `:verify` confirms the gate circuit (with the local as an ancilla register)
   matches the interpreter.

@@ -31,3 +31,24 @@ call f(x, result)
 print "f(x)=3x+1 = " + result
 uncall f(x, result)
 print "uncalled  = " + result
+
+# The same thing as syntax: `with x = e { compute } do { body }` runs the
+# compute block, the body, then the compute block's structural inverse, and
+# delocals the ancilla — the uncompute is derived from the text, so it cannot
+# drift out of sync with the compute.
+
+proc g(inp, out) {
+  with t = 0 {
+    t += inp
+    t += inp
+    t += inp
+    t += 1          # t = 3*inp + 1
+  } do {
+    out += t        # copy it to the output
+  }                 # uncompute + delocal happen automatically
+}
+
+call g(x, result)
+print "with/do   = " + result
+uncall g(x, result)
+print "uncalled  = " + result

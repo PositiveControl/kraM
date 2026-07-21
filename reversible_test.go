@@ -500,3 +500,75 @@ func TestUncallRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestWithDo: `with x = e { compute } do { body }` desugars to
+// local; compute; body; inverse(compute); delocal — compute-copy-uncompute
+// as syntax. Checks forward result, clean ancilla, uncall round-trip, and
+// that the desugared form lowers to a circuit matching the interpreter.
+func TestWithDo(t *testing.T) {
+	const proc = `proc f(inp, out) {
+  with t = 0 { t += inp; t += inp; t += inp; t += 1 } do { out += t }
+}`
+	rng := rand.New(rand.NewSource(17))
+	for iter := 0; iter < 200; iter++ {
+		x := rng.Intn(1000)
+		ip := NewInterp()
+		mustRun(t, ip, fmt.Sprintf("x = %d; result = 0", x))
+		mustRun(t, ip, proc)
+		mustRun(t, ip, "call f(x, result)")
+
+		if r, _ := ip.get("result"); int(r.Num) != 3*x+1 {
+			t.Fatalf("f(%d) = %v, want %d", x, r.Num, 3*x+1)
+		}
+		if _, exists := ip.get("t"); exists {
+			t.Fatalf("ancilla t leaked (with should uncompute+delocal)")
+		}
+		mustRun(t, ip, "uncall f(x, result)")
+		if r, _ := ip.get("result"); r.Num != 0 {
+			t.Fatalf("uncall did not restore result: got %v", r.Num)
+		}
+	}
+}
+
+// TestWithDoCircuit: the desugared with/do lowers to gates that match the
+// interpreter.
+func TestWithDoCircuit(t *testing.T) {
+	const src = `with t = 0 { t += a; t += a; t += 1 } do { b += t }`
+	ip := NewInterp()
+	mustRun(t, ip, "a = 5; b = 0")
+
+	ast, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := ip.clone()
+	if _, err := Eval(ast, clone); err != nil {
+		t.Fatal(err)
+	}
+	gates, err := lowerProgram(ast, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	simReg, err := simulate(gates, registersFrom(ip))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a", "b"} {
+		iv := clone.vars[n].val
+		if int64(iv.Num) != simReg[n] {
+			t.Fatalf("%s: interpreter %v, circuit %d", n, iv.Num, simReg[n])
+		}
+	}
+}
+
+// TestWithDoRejectsIrreversibleCompute: a compute block that can't be
+// structurally inverted is a parse error, not a runtime surprise.
+func TestWithDoRejectsIrreversibleCompute(t *testing.T) {
+	_, err := Parse(`with t = 0 { t = 5 } do { }`)
+	if err == nil {
+		t.Fatal("expected parse error for irreversible compute block")
+	}
+	if !strings.Contains(err.Error(), "not reversible") {
+		t.Fatalf("unhelpful error: %v", err)
+	}
+}
