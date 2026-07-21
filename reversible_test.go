@@ -140,7 +140,7 @@ func bitMatchesInterp(t *testing.T, initSrc, progSrc string) {
 	initBits := make([]bool, bc.nwires)
 	for name, base := range bc.base {
 		val := initReg[name]
-		for b := 0; b < bitWidth; b++ {
+		for b := 0; b < bc.width; b++ {
 			initBits[base+b] = (val>>uint(b))&1 == 1
 		}
 	}
@@ -148,12 +148,12 @@ func bitMatchesInterp(t *testing.T, initSrc, progSrc string) {
 
 	for name, base := range bc.base {
 		var got int64
-		for b := 0; b < bitWidth; b++ {
+		for b := 0; b < bc.width; b++ {
 			if out[base+b] {
 				got |= 1 << uint(b)
 			}
 		}
-		want, ok := regWant(clone, name)
+		want, ok := regWant(clone, name, bc.width)
 		if !ok || got != want {
 			t.Fatalf("bit-circuit mismatch on %s: gates=%d interp=%d ok=%v\ninit: %s\nprog: %s",
 				name, got, want, ok, initSrc, progSrc)

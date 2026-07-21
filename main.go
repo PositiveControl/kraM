@@ -132,7 +132,7 @@ func main() {
 				fmt.Println("cannot compile to gates:", err)
 				continue
 			}
-			fmt.Printf("elementary gates (%d-bit registers, %d wires):\n", bitWidth, bc.nwires)
+			fmt.Printf("elementary gates (%d-bit registers, %d wires):\n", bc.width, bc.nwires)
 			for i, g := range bc.gates {
 				fmt.Printf("  %3d  %s\n", i+1, g)
 			}

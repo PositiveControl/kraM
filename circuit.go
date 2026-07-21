@@ -339,7 +339,7 @@ func verify(ast Node, ip *Interp) (string, error) {
 	initBits := make([]bool, bc.nwires)
 	for name, base := range bc.base {
 		v := initReg[name]
-		for b := 0; b < bitWidth; b++ {
+		for b := 0; b < bc.width; b++ {
 			initBits[base+b] = (v>>uint(b))&1 == 1
 		}
 	}
@@ -361,12 +361,12 @@ func verify(ast Node, ip *Interp) (string, error) {
 	for _, n := range names {
 		var got int64
 		base := bc.base[n]
-		for bit := 0; bit < bitWidth; bit++ {
+		for bit := 0; bit < bc.width; bit++ {
 			if out[base+bit] {
 				got |= 1 << uint(bit)
 			}
 		}
-		want, ok := regWant(clone, n)
+		want, ok := regWant(clone, n, bc.width)
 		mark := "ok"
 		if !ok || want != got {
 			mark = "MISMATCH"
@@ -412,7 +412,7 @@ func energyReport(ast Node, ip *Interp) (string, error) {
 			logical[reg] = true
 		}
 		if logical[reg] {
-			for b := 0; b < bitWidth; b++ {
+			for b := 0; b < bc.width; b++ {
 				kept[base+b] = true
 				keptWires++
 			}
@@ -423,7 +423,7 @@ func energyReport(ast Node, ip *Interp) (string, error) {
 	initBits := make([]bool, bc.nwires)
 	for name, base := range bc.base {
 		v := init[name]
-		for b := 0; b < bitWidth; b++ {
+		for b := 0; b < bc.width; b++ {
 			initBits[base+b] = (v>>uint(b))&1 == 1
 		}
 	}
@@ -497,8 +497,8 @@ func splitElemKey(key string) (string, int, bool) {
 
 // regWant returns the interpreter's expected value (mod 2^bitWidth) for a
 // register key, resolving array element keys against the array variable.
-func regWant(clone *Interp, key string) (int64, bool) {
-	m := int64(1) << bitWidth
+func regWant(clone *Interp, key string, width int) (int64, bool) {
+	m := int64(1) << width
 	mask := func(v int64) int64 { return ((v % m) + m) % m }
 	if name, idx, isElem := splitElemKey(key); isElem {
 		arr := clone.vars[name].val

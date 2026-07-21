@@ -10,9 +10,9 @@ const bitWidth = 16
 type BitOp int
 
 const (
-	BX     BitOp = iota // NOT on wire T
-	BCNOT               // if A then flip T
-	BTOFF               // if A and B then flip T  (Toffoli / CCNOT)
+	BX    BitOp = iota // NOT on wire T
+	BCNOT              // if A then flip T
+	BTOFF              // if A and B then flip T  (Toffoli / CCNOT)
 )
 
 // BitGate is one elementary gate over wire indices.
@@ -36,12 +36,13 @@ func (g BitGate) String() string {
 // bitCircuit is a compiled elementary-gate program plus its wire layout.
 type bitCircuit struct {
 	gates  []BitGate
-	base   map[string]int  // var -> index of its bit 0
+	base   map[string]int // var -> index of its bit 0
 	nwires int
+	width  int                // bits per register (bitWidth unless overridden)
 	procs  map[string]ProcDef // procedure definitions, for inlining call/uncall
-	free_  []int           // clean (zeroed) ancilla wires available for reuse
-	noFree bool            // while true, freed wires are NOT pooled (see emitSub)
-	vals   *Interp         // compile-time state, for computing static loop bounds
+	free_  []int              // clean (zeroed) ancilla wires available for reuse
+	noFree bool               // while true, freed wires are NOT pooled (see emitSub)
+	vals   *Interp            // compile-time state, for computing static loop bounds
 }
 
 // compileBits lowers a reversible program to elementary gates over
@@ -50,6 +51,12 @@ type bitCircuit struct {
 // and always returned to zero, so they are reusable scratch. procs supplies
 // procedure definitions for inlining call/uncall (nil if none).
 func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
+	return compileBitsW(n, ip, bitWidth)
+}
+
+// compileBitsW is compileBits with an explicit register width (the Grover /
+// QASM path compiles narrow circuits so they fit on real quantum hardware).
+func compileBitsW(n Node, ip *Interp, width int) (*bitCircuit, error) {
 	// Compile against a *clone* of the live state: emitting a program advances a
 	// shadow (init assignments set variables, so a following loop unrolls from the
 	// right values) without mutating the caller's interpreter.
@@ -57,7 +64,7 @@ func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
 	if ip != nil {
 		vals = ip.clone()
 	}
-	c := &bitCircuit{base: map[string]int{}, procs: map[string]ProcDef{}, vals: vals}
+	c := &bitCircuit{base: map[string]int{}, procs: map[string]ProcDef{}, vals: vals, width: width}
 	if ip != nil {
 		for k, v := range ip.procs {
 			c.procs[k] = v
@@ -73,7 +80,7 @@ func compileBits(n Node, ip *Interp) (*bitCircuit, error) {
 	}
 	for _, name := range collectVars(n, c.procs) {
 		c.base[name] = c.nwires
-		c.nwires += bitWidth
+		c.nwires += c.width
 	}
 	if err := c.emit(n); err != nil {
 		return nil, err
@@ -99,9 +106,9 @@ func (c *bitCircuit) reg(name string) []int {
 	if !ok { // a variable that only appears as a swap/operand still needs wires
 		base = c.nwires
 		c.base[name] = base
-		c.nwires += bitWidth
+		c.nwires += c.width
 	}
-	w := make([]int, bitWidth)
+	w := make([]int, c.width)
 	for i := range w {
 		w[i] = base + i
 	}
@@ -168,7 +175,7 @@ func (c *bitCircuit) emit(n Node) error {
 		if err != nil {
 			return err
 		}
-		for i := 0; i < bitWidth; i++ { // swap = 3 CNOTs per bit
+		for i := 0; i < c.width; i++ { // swap = 3 CNOTs per bit
 			c.cnot(x[i], y[i])
 			c.cnot(y[i], x[i])
 			c.cnot(x[i], y[i])
@@ -217,7 +224,7 @@ func (c *bitCircuit) emit(n Node) error {
 				c.base[v.Name] = wires[0]
 				base = wires[0]
 			}
-			wires := make([]int, bitWidth)
+			wires := make([]int, c.width)
 			for i := range wires {
 				wires[i] = base + i
 			}
@@ -244,7 +251,7 @@ func (c *bitCircuit) emit(n Node) error {
 		if !ok {
 			return fmt.Errorf("delocal of unknown register %q", v.Name)
 		}
-		wires := make([]int, bitWidth)
+		wires := make([]int, c.width)
 		for i := range wires {
 			wires[i] = base + i
 		}
@@ -299,7 +306,7 @@ func (c *bitCircuit) xorInto(target []int, valNode Node) error {
 		return err
 	}
 	if isConst {
-		for i := 0; i < bitWidth; i++ {
+		for i := 0; i < c.width; i++ {
 			if k&(1<<uint(i)) != 0 {
 				c.x(target[i])
 			}
@@ -309,7 +316,7 @@ func (c *bitCircuit) xorInto(target []int, valNode Node) error {
 	if w[0] == target[0] {
 		return fmt.Errorf("cannot compile a self-referential ^=")
 	}
-	for i := 0; i < bitWidth; i++ {
+	for i := 0; i < c.width; i++ {
 		c.cnot(w[i], target[i])
 	}
 	return nil
@@ -325,9 +332,9 @@ func (c *bitCircuit) addInto(target []int, op TokKind, valNode Node) error {
 	var addend []int
 	var cleanup func()
 	if isConst {
-		addend = c.alloc(bitWidth)
+		addend = c.alloc(c.width)
 		set := func() {
-			for i := 0; i < bitWidth; i++ {
+			for i := 0; i < c.width; i++ {
 				if k&(1<<uint(i)) != 0 {
 					c.x(addend[i])
 				}
@@ -399,7 +406,7 @@ func (c *bitCircuit) locWires(name string, idx Node) ([]int, error) {
 // does not pull from the scattered ancilla pool, so the block stays contiguous
 // for name-based addressing; its wires return to the pool when freed.
 func (c *bitCircuit) allocReg() []int {
-	w := make([]int, bitWidth)
+	w := make([]int, c.width)
 	for i := range w {
 		w[i] = c.nwires
 		c.nwires++
@@ -416,14 +423,14 @@ func (c *bitCircuit) initReg(target []int, valNode Node) error {
 		return err
 	}
 	if isConst {
-		for i := 0; i < bitWidth; i++ {
+		for i := 0; i < c.width; i++ {
 			if k&(1<<uint(i)) != 0 {
 				c.x(target[i])
 			}
 		}
 		return nil
 	}
-	for i := 0; i < bitWidth; i++ {
+	for i := 0; i < c.width; i++ {
 		c.cnot(w[i], target[i])
 	}
 	return nil
@@ -609,9 +616,9 @@ func (c *bitCircuit) compareConst(reg []int, op TokKind, k int64, q int) {
 
 // eqVarToBit sets q ^= (x == y), restoring x and y.
 func (c *bitCircuit) eqVarToBit(x, y []int, q int) {
-	tmp := c.alloc(bitWidth)
+	tmp := c.alloc(c.width)
 	var fwd []BitGate
-	for i := 0; i < bitWidth; i++ { // tmp = x XOR y
+	for i := 0; i < c.width; i++ { // tmp = x XOR y
 		fwd = append(fwd, BitGate{BCNOT, x[i], 0, tmp[i]})
 		fwd = append(fwd, BitGate{BCNOT, y[i], 0, tmp[i]})
 	}
@@ -631,16 +638,16 @@ func (c *bitCircuit) eqVarToBit(x, y []int, q int) {
 // x + ~y + 1 (carry-in 1) exposes carry-out = (x >= y); copy it, then run the
 // computation backward to clear all scratch. x and y are restored.
 func (c *bitCircuit) geVarToBit(x, y []int, q int) {
-	s := c.alloc(bitWidth)
-	cr := c.alloc(bitWidth)
+	s := c.alloc(c.width)
+	cr := c.alloc(c.width)
 	z := c.alloc(1)[0]
 	cout := c.alloc(1)[0]
 
 	var fwd []BitGate
-	for i := 0; i < bitWidth; i++ { // s = copy of x
+	for i := 0; i < c.width; i++ { // s = copy of x
 		fwd = append(fwd, BitGate{BCNOT, x[i], 0, s[i]})
 	}
-	for i := 0; i < bitWidth; i++ { // cr = ~y  (copy y, then NOT)
+	for i := 0; i < c.width; i++ { // cr = ~y  (copy y, then NOT)
 		fwd = append(fwd, BitGate{BCNOT, y[i], 0, cr[i]})
 		fwd = append(fwd, BitGate{BX, 0, 0, cr[i]})
 	}
@@ -661,7 +668,7 @@ func (c *bitCircuit) geVarToBit(x, y []int, q int) {
 // carry-out (= reg >= k), copy that bit into q, then run the whole computation
 // backward to clear all scratch.
 func (c *bitCircuit) geToBit(reg []int, k int64, q int) {
-	m := int64(1) << bitWidth
+	m := int64(1) << c.width
 	switch {
 	case k <= 0: // reg >= (<=0) always holds
 		c.x(q)
@@ -670,16 +677,16 @@ func (c *bitCircuit) geToBit(reg []int, k int64, q int) {
 		return
 	}
 	cst := m - k // two's complement of k, in [1, m-1]
-	s := c.alloc(bitWidth)
-	cr := c.alloc(bitWidth)
+	s := c.alloc(c.width)
+	cr := c.alloc(c.width)
 	z := c.alloc(1)[0]
 	cout := c.alloc(1)[0]
 
 	var fwd []BitGate
-	for i := 0; i < bitWidth; i++ { // s = copy of reg
+	for i := 0; i < c.width; i++ { // s = copy of reg
 		fwd = append(fwd, BitGate{BCNOT, reg[i], 0, s[i]})
 	}
-	for i := 0; i < bitWidth; i++ { // cr = constant (2^w - k)
+	for i := 0; i < c.width; i++ { // cr = constant (2^w - k)
 		if cst&(1<<uint(i)) != 0 {
 			fwd = append(fwd, BitGate{BX, 0, 0, cr[i]})
 		}
@@ -687,8 +694,8 @@ func (c *bitCircuit) geToBit(reg []int, k int64, q int) {
 	fwd = append(fwd, cuccaro(cr, s, z, cout)...) // s += cr, cout = (reg >= k)
 
 	c.gates = append(c.gates, fwd...)
-	c.cnot(cout, q)                                  // copy the comparison bit
-	c.gates = append(c.gates, inverseGates(fwd)...)  // uncompute all scratch
+	c.cnot(cout, q)                                 // copy the comparison bit
+	c.gates = append(c.gates, inverseGates(fwd)...) // uncompute all scratch
 
 	c.free(s...)
 	c.free(cr...)
@@ -826,7 +833,7 @@ func (c *bitCircuit) appendControlled(q int, g BitGate) {
 // multi-controlled NOT, then unflip.
 func (c *bitCircuit) equalityToBit(reg []int, k int64, q int) {
 	flip := func() {
-		for i := 0; i < bitWidth; i++ {
+		for i := 0; i < c.width; i++ {
 			if k&(1<<uint(i)) == 0 {
 				c.x(reg[i])
 			}
@@ -942,7 +949,7 @@ func cuccaro(addend, target []int, z, cout int) []BitGate {
 	maj := func(ci, bi, ai int) { g.cnot(ai, bi); g.cnot(ai, ci); g.toff(ci, bi, ai) }
 	uma := func(ci, bi, ai int) { g.toff(ci, bi, ai); g.cnot(ai, ci); g.cnot(ci, bi) }
 
-	n := bitWidth
+	n := len(target)
 	maj(z, target[0], addend[0])
 	for i := 1; i < n; i++ {
 		maj(addend[i-1], target[i], addend[i])
