@@ -1,10 +1,10 @@
 # Demos
 
-Four `.kr` programs, each highlighting a different facet of reversible
+Six `.kr` programs, each highlighting a different facet of reversible
 computing. Run any with `./kram <file>` (after `make build`).
 
 The arc: the first two show reversibility when it's *free* (the operations are
-already invertible); the last two show the deeper case — algorithms that are
+already invertible); the rest show the deeper case — algorithms that are
 inherently **irreversible**, made reversible by recording exactly the
 information they would otherwise destroy.
 
@@ -14,6 +14,7 @@ information they would otherwise destroy.
 | `reverse.kr` | reversible array element ops in a loop | swaps are self-inverse |
 | `sort.kr` | making an irreversible algorithm reversible | records a swap trace |
 | `gcd.kr` | same, with arithmetic | records a branch trace |
+| `range.kr` | compound conditions in a reversible if | records a hit trace |
 | `compute.kr` | compute-copy-uncompute with a local ancilla | the ancilla is uncomputed to 0 |
 
 ---
@@ -117,6 +118,35 @@ restored: a=48, b=36
 
 **Point:** `(a, b) ↔ (gcd, trace)` is a bijection. `uncall gcd` walks the trace
 backward and reconstructs both inputs from the single gcd value.
+
+---
+
+## `range.kr` — reversible range-count
+
+Counts how many array elements fall in `[lo, hi]`, recording per element
+whether it was counted, so the count can be uncalled back to zero.
+
+```
+array: [3, 8, 1, 6, 4]
+range: [3, 6]
+count: 3
+trace: [1, 0, 0, 1, 1]
+uncalled count: 0
+```
+
+**Showcases**
+- **Compound conditions** — the reversible `if` tests
+  `xs[i] >= lo && xs[i] <= hi`, a `&&` of two comparisons (the same condition
+  grammar `:gates` and `:grover` compile).
+- **The hit trace** — each element records into `hit[i]` whether it was
+  counted; that recorded bit is the reversible-`if` exit assertion,
+  `assert hit[i] == 1`.
+- **`call` / `uncall`** — counting is many-to-one, so `uncall countrange`
+  needs the trace to subtract exactly the elements that were added.
+
+**Point:** the trace *is* the answer's missing information — `count` alone
+can't say which elements matched; `(count, trace)` can, so the pair is a
+bijection with the input state.
 
 ---
 
