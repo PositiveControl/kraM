@@ -34,6 +34,8 @@ func (g Gate) String() string {
 		s = fmt.Sprintf("CNOT(%s, %s)", g.Ctrl, g.Target)
 	case "SWAP":
 		s = fmt.Sprintf("SWAP(%s, %s)", g.A, g.B)
+	case "ROTL", "ROTR":
+		s = fmt.Sprintf("%s(%s, %d)", g.Op, g.Target, g.Mask)
 	case "ADD", "SUB", "XOR":
 		s = fmt.Sprintf("%s(%s, %s)", g.Op, g.Target, format(g.Operand))
 	case "ASSERT":
@@ -111,12 +113,32 @@ func lower(n Node, ip *Interp) ([]Gate, error) {
 			Note: "3 CNOTs per bit (Fredkin-style)"}}, nil
 
 	case CompoundAssign:
+		if v.Op == STAR || v.Op == SLASH {
+			return nil, fmt.Errorf("*= and /= do not lower to gates (multiplication by an even factor is not a bijection mod 2^%d) — interpreter-only, like data-dependent control flow", bitWidth)
+		}
 		op := "ADD"
 		if v.Op == MINUS {
 			op = "SUB"
 		}
 		return []Gate{{Op: op, Target: v.Name, Operand: v.Value,
 			Note: "reversible ripple-carry adder block"}}, nil
+
+	case RotAssign:
+		// A rotation is a wire permutation; the amount must fold to a constant
+		// (like array indices) so the permutation is fixed wiring.
+		k, err := foldRotAmount(v.Value, ip)
+		if err != nil {
+			return nil, err
+		}
+		if k == 0 {
+			return nil, nil // rotate by 0 is the identity
+		}
+		op := "ROTR"
+		if v.Left {
+			op = "ROTL"
+		}
+		return []Gate{{Op: op, Target: v.Name, Mask: int64(k),
+			Note: fmt.Sprintf("cyclic wire permutation by %d on %d bits (swap network)", k, bitWidth)}}, nil
 
 	case Assert:
 		return []Gate{{Op: "ASSERT", Operand: v.Cond, Note: "classical check, not a physical gate"}}, nil
@@ -219,6 +241,24 @@ func locName(name string, idx Node, ip *Interp) (string, error) {
 	return elemKey(name, int(k)), nil
 }
 
+// foldRotAmount folds a rotate amount to a compile-time constant, normalized
+// to [0, bitWidth).
+func foldRotAmount(n Node, ip *Interp) (int, error) {
+	shadow := NewInterp()
+	if ip != nil {
+		shadow = ip.clone()
+	}
+	v, err := Eval(n, shadow)
+	if err != nil {
+		return 0, fmt.Errorf("rotate amount must be a compile-time constant: %w", err)
+	}
+	k, err := asInt(v, "rotate amount")
+	if err != nil {
+		return 0, err
+	}
+	return int(((k % bitWidth) + bitWidth) % bitWidth), nil
+}
+
 // advance runs a statement on the shadow interpreter to move its state forward,
 // so a subsequent loop unroll or index fold sees the right values.
 func advance(n Node, ip *Interp) error {
@@ -297,6 +337,8 @@ func simulate(gates []Gate, reg map[string]int64) (map[string]int64, error) {
 			out[g.Target] ^= out[g.Ctrl]
 		case "SWAP":
 			out[g.A], out[g.B] = out[g.B], out[g.A]
+		case "ROTL", "ROTR":
+			out[g.Target] = rotWord(out[g.Target], int(g.Mask), g.Op == "ROTL")
 		case "ADD", "SUB", "XOR":
 			v, err := operandInt(g.Operand, out)
 			if err != nil {

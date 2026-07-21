@@ -29,9 +29,12 @@ func format(n Node) string {
 	case Assign:
 		return v.Name + " = " + format(v.Value)
 	case CompoundAssign:
-		op := "+="
-		if v.Op == MINUS {
-			op = "-="
+		op := map[TokKind]string{PLUS: "+=", MINUS: "-=", STAR: "*=", SLASH: "/="}[v.Op]
+		return v.Name + " " + op + " " + format(v.Value)
+	case RotAssign:
+		op := ">>="
+		if v.Left {
+			op = "<<="
 		}
 		return v.Name + " " + op + " " + format(v.Value)
 	case XorAssign:

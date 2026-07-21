@@ -166,6 +166,8 @@ func (c *bitCircuit) emit(n Node) error {
 		return c.emitXor(v)
 	case CompoundAssign:
 		return c.emitAdd(v)
+	case RotAssign:
+		return c.emitRot(v)
 	case Swap:
 		x, err := c.locWires(v.A, v.AI)
 		if err != nil {
@@ -295,7 +297,46 @@ func (c *bitCircuit) emit(n Node) error {
 
 func (c *bitCircuit) emitXor(v XorAssign) error { return c.xorInto(c.reg(v.Name), v.Value) }
 func (c *bitCircuit) emitAdd(v CompoundAssign) error {
+	if v.Op == STAR || v.Op == SLASH {
+		return fmt.Errorf("*= and /= do not lower to gates (multiplication by an even factor is not a bijection mod 2^%d) — interpreter-only", c.width)
+	}
 	return c.addInto(c.reg(v.Name), v.Op, v.Value)
+}
+
+// emitRot lowers a bit rotation to a swap network (each wire swap is 3 CNOTs).
+// The rotation is a fixed cyclic permutation of the register's wires, applied
+// as three segment reversals. The amount must fold to a constant.
+func (c *bitCircuit) emitRot(v RotAssign) error {
+	if c.width != bitWidth {
+		return fmt.Errorf("<<= / >>= are defined on the %d-bit word; this circuit compiles %d-bit registers", bitWidth, c.width)
+	}
+	k, err := foldRotAmount(v.Value, c.vals)
+	if err != nil {
+		return err
+	}
+	if k == 0 {
+		return nil // identity
+	}
+	target := c.reg(v.Name)
+	swap := func(a, b int) { c.cnot(a, b); c.cnot(b, a); c.cnot(a, b) }
+	rev := func(lo, hi int) {
+		for lo < hi {
+			swap(target[lo], target[hi])
+			lo++
+			hi--
+		}
+	}
+	// Value-rotl by k moves bit i to (i+k)%w: as an array op on wires (LSB
+	// first) that is an array-rotate-left by w-k; value-rotr by k is an
+	// array-rotate-left by k. Three reversals realise it in-place.
+	m := k
+	if v.Left {
+		m = c.width - k
+	}
+	rev(0, m-1)
+	rev(m, c.width-1)
+	rev(0, c.width-1)
+	return nil
 }
 
 // xorInto emits target ^= operand. The operand is a constant (X on set bits) or

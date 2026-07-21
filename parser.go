@@ -19,11 +19,23 @@ type Assign struct {
 }
 type Print struct{ Value Node }
 
-// CompoundAssign is a reversible update: `name += value` or `name -= value`.
-// Op is PLUS or MINUS.
+// CompoundAssign is a reversible arithmetic update: `name += value`,
+// `name -= value`, `name *= value`, or `name /= value`. Op is PLUS, MINUS,
+// STAR, or SLASH. The scale forms are integer-only: the factor must be a
+// nonzero integer, and /= must divide evenly — that exactness is what makes
+// them an inverse pair.
 type CompoundAssign struct {
 	Name  string
 	Op    TokKind
+	Value Node
+}
+
+// RotAssign is a reversible bit rotation: `name <<= k` (left) or `name >>= k`
+// (right), on the circuit word width (bitWidth bits). Rotation is a bit
+// permutation, so no information is lost; the inverse rotates the other way.
+type RotAssign struct {
+	Name  string
+	Left  bool
 	Value Node
 }
 
@@ -140,6 +152,7 @@ func (Var) node()            {}
 func (Assign) node()         {}
 func (Print) node()          {}
 func (CompoundAssign) node() {}
+func (RotAssign) node()      {}
 func (Swap) node()           {}
 func (XorAssign) node()      {}
 func (Block) node()          {}
@@ -303,7 +316,7 @@ func (p *Parser) parseStmt() Node {
 	case ASSIGN:
 		p.advance()
 		return p.makeAssign(left, p.parseExpr(0))
-	case PLUSEQ, MINUSEQ, CARETEQ:
+	case PLUSEQ, MINUSEQ, CARETEQ, STAREQ, SLASHEQ, SHLEQ, SHREQ:
 		op := p.advance().Kind
 		return p.makeUpdate(left, op, p.parseExpr(0))
 	case SWAP:
@@ -346,10 +359,25 @@ func (p *Parser) makeUpdate(target Node, op TokKind, val Node) Node {
 		return nil
 	}
 	if idx != nil {
+		switch op {
+		case STAREQ, SLASHEQ, SHLEQ, SHREQ:
+			// ponytail: scalars only; extend IdxUpdate when a demo needs elements
+			p.fail("*= /= <<= >>= are not supported on array elements yet — use += / -= / ^= / <=>")
+			return nil
+		}
 		return IdxUpdate{Name: name, Idx: idx, Op: op, Value: val}
 	}
-	if op == CARETEQ {
+	switch op {
+	case CARETEQ:
 		return XorAssign{Name: name, Value: val}
+	case SHLEQ:
+		return RotAssign{Name: name, Left: true, Value: val}
+	case SHREQ:
+		return RotAssign{Name: name, Left: false, Value: val}
+	case STAREQ:
+		return CompoundAssign{Name: name, Op: STAR, Value: val}
+	case SLASHEQ:
+		return CompoundAssign{Name: name, Op: SLASH, Value: val}
 	}
 	arith := PLUS
 	if op == MINUSEQ {

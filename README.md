@@ -50,7 +50,17 @@ Reversible updates keep the information and can be undone exactly:
 x += 3      # inverse: x -= 3
 x ^= 10     # XOR — self-inverse
 a <=> b     # swap — self-inverse
+x *= 3      # inverse: x /= 3 — integers only, factor must be nonzero
+x /= 3      # inverse: x *= 3 — must divide evenly, else a runtime error
+x <<= 4     # rotate left on the 16-bit circuit word — inverse: x >>= 4
 ```
+
+The scale pair is exact by construction: `*= 0` and an inexact `/=` are
+runtime errors, because both would destroy information. Rotations are bit
+permutations (amounts wrap mod 16; the value must fit the 16-bit word), so
+they lower to the gate level as a fixed swap network of CNOTs. `*=` / `/=`
+stay interpreter-only — multiplication by an even factor is not a bijection
+mod 2^16, so there is no general gate lowering.
 
 To destroy information on purpose, there is one explicit escape hatch —
 `forget x`. It erases the variable (freeing the name to re-introduce). It is the

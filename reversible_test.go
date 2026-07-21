@@ -640,3 +640,126 @@ func TestForLoopCircuit(t *testing.T) {
 		}
 	}
 }
+
+// TestScaleOps: *= and /= are exact-integer inverses; irreversible uses
+// (zero factor, inexact division) are runtime errors.
+func TestScaleOps(t *testing.T) {
+	ip := NewInterp()
+	mustRun(t, ip, "x = 6")
+	mustRun(t, ip, "x *= 7")
+	if v, _ := ip.get("x"); v.Num != 42 {
+		t.Fatalf("x *= 7: got %v, want 42", v.Num)
+	}
+	mustRun(t, ip, "x /= 7")
+	if v, _ := ip.get("x"); v.Num != 6 {
+		t.Fatalf("x /= 7: got %v, want 6", v.Num)
+	}
+	mustRun(t, ip, "x *= 3; x *= 5")
+	mustRun(t, ip, "reverse { x *= 3; x *= 5 }")
+	if v, _ := ip.get("x"); v.Num != 6 {
+		t.Fatalf("mul round-trip: got %v, want 6", v.Num)
+	}
+	// undo walks the scale back through the timeline too
+	mustRun(t, ip, "x *= 9")
+	ip.Undo()
+	if v, _ := ip.get("x"); v.Num != 6 {
+		t.Fatalf("undo of *=: got %v, want 6", v.Num)
+	}
+
+	for _, bad := range []string{"x *= 0", "x /= 4", "x *= 1.5"} {
+		if _, err := Parse(bad); err != nil {
+			t.Fatalf("parse %q: %v", bad, err)
+		}
+		ast, _ := Parse(bad)
+		if _, err := Eval(ast, ip.clone()); err == nil {
+			t.Fatalf("%q should be a runtime error", bad)
+		}
+	}
+}
+
+// TestRotOps: <<= / >>= rotate on the bitWidth-bit word — exact inverses,
+// wrap-around, amounts mod bitWidth, out-of-range targets rejected.
+func TestRotOps(t *testing.T) {
+	ip := NewInterp()
+	mustRun(t, ip, "r = 3")
+	mustRun(t, ip, "r <<= 15")
+	if v, _ := ip.get("r"); v.Num != 32769 { // 0b11 rotl 15 on 16 bits = 0x8001
+		t.Fatalf("r <<= 15: got %v, want 32769", v.Num)
+	}
+	mustRun(t, ip, "r >>= 15")
+	if v, _ := ip.get("r"); v.Num != 3 {
+		t.Fatalf("r >>= 15: got %v, want 3", v.Num)
+	}
+	mustRun(t, ip, "r <<= 20") // ≡ <<= 4
+	if v, _ := ip.get("r"); v.Num != 48 {
+		t.Fatalf("r <<= 20: got %v, want 48", v.Num)
+	}
+	mustRun(t, ip, "reverse { r <<= 20 }")
+	if v, _ := ip.get("r"); v.Num != 3 {
+		t.Fatalf("reverse rot: got %v, want 3", v.Num)
+	}
+	mustRun(t, ip, "r <<= 7")
+	ip.Undo()
+	if v, _ := ip.get("r"); v.Num != 3 {
+		t.Fatalf("undo of <<=: got %v, want 3", v.Num)
+	}
+
+	big := ip.clone()
+	mustRun(t, big, "b = 70000") // outside the 16-bit word
+	if ast, _ := Parse("b <<= 1"); ast != nil {
+		if _, err := Eval(ast, big); err == nil {
+			t.Fatal("rotating a value outside [0, 2^16) should error")
+		}
+	}
+}
+
+// TestRotCircuit: rotations lower at both levels — the register-level netlist
+// and the elementary swap network — and both match the interpreter.
+func TestRotCircuit(t *testing.T) {
+	const src = `r <<= 5; r ^= 9; r >>= 2`
+	ip := NewInterp()
+	mustRun(t, ip, "r = 12345")
+
+	ast, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := ip.clone()
+	if _, err := Eval(ast, clone); err != nil {
+		t.Fatal(err)
+	}
+	want := int64(clone.vars["r"].val.Num)
+
+	// register-level
+	gates, err := lowerProgram(ast, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	simReg, err := simulate(gates, registersFrom(ip))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if simReg["r"] != want {
+		t.Fatalf("register-level: got %d, want %d", simReg["r"], want)
+	}
+
+	// elementary bit level (swap network)
+	bc, err := compileBits(ast, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	init := make([]bool, bc.nwires)
+	for i := 0; i < bc.width; i++ {
+		init[bc.base["r"]+i] = 12345&(1<<uint(i)) != 0
+	}
+	final := simulateBits(bc.gates, bc.nwires, init)
+	var got int64
+	for i := 0; i < bc.width; i++ {
+		if final[bc.base["r"]+i] {
+			got |= 1 << uint(i)
+		}
+	}
+	if got != want {
+		t.Fatalf("bit-level: got %d, want %d", got, want)
+	}
+}

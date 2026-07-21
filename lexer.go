@@ -59,6 +59,10 @@ const (
 	WITH    // with (compute-copy-uncompute: with x = e { compute } do { body })
 	DO      // do (body of a with block)
 	FOR     // for (counted-loop sugar: for i = lo until hi { body })
+	STAREQ  // *=  reversible scale (integer, nonzero factor; inverse of /=)
+	SLASHEQ // /=  reversible exact division (integer, nonzero, must divide evenly)
+	SHLEQ   // <<= reversible bit-rotate left (on the circuit word width)
+	SHREQ   // >>= reversible bit-rotate right
 )
 
 type Token struct {
@@ -173,6 +177,14 @@ func kindName(k TokKind) string {
 		return "DO"
 	case FOR:
 		return "FOR"
+	case STAREQ:
+		return "STAREQ"
+	case SLASHEQ:
+		return "SLASHEQ"
+	case SHLEQ:
+		return "SHLEQ"
+	case SHREQ:
+		return "SHREQ"
 	default:
 		return "ILLEGAL"
 	}
@@ -208,11 +220,21 @@ func Lex(src string) []Token {
 				i++
 			}
 		case c == '*':
-			toks = append(toks, Token{STAR, "*", i})
-			i++
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{STAREQ, "*=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{STAR, "*", i})
+				i++
+			}
 		case c == '/':
-			toks = append(toks, Token{SLASH, "/", i})
-			i++
+			if peek(src, i+1) == '=' {
+				toks = append(toks, Token{SLASHEQ, "/=", i})
+				i += 2
+			} else {
+				toks = append(toks, Token{SLASH, "/", i})
+				i++
+			}
 		case c == '(':
 			toks = append(toks, Token{LPAREN, "(", i})
 			i++
@@ -246,7 +268,10 @@ func Lex(src string) []Token {
 				i++
 			}
 		case c == '<':
-			if peek(src, i+1) == '=' && peek(src, i+2) == '>' {
+			if peek(src, i+1) == '<' && peek(src, i+2) == '=' {
+				toks = append(toks, Token{SHLEQ, "<<=", i})
+				i += 3
+			} else if peek(src, i+1) == '=' && peek(src, i+2) == '>' {
 				toks = append(toks, Token{SWAP, "<=>", i})
 				i += 3
 			} else if peek(src, i+1) == '=' {
@@ -257,7 +282,10 @@ func Lex(src string) []Token {
 				i++
 			}
 		case c == '>':
-			if peek(src, i+1) == '=' {
+			if peek(src, i+1) == '>' && peek(src, i+2) == '=' {
+				toks = append(toks, Token{SHREQ, ">>=", i})
+				i += 3
+			} else if peek(src, i+1) == '=' {
 				toks = append(toks, Token{GE, ">=", i})
 				i += 2
 			} else {

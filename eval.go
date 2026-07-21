@@ -80,12 +80,57 @@ func Eval(n Node, ip *Interp) (Value, error) {
 		if rhs.Kind != NumKind {
 			return Value{}, fmt.Errorf("reversible update needs a number, got %s", rhs.typeName())
 		}
+		if v.Op == STAR || v.Op == SLASH {
+			// Integer-only scale: exactness is what keeps *= and /= inverses.
+			lhs, err := asInt(cur, fmt.Sprintf("variable %q", v.Name))
+			if err != nil {
+				return Value{}, err
+			}
+			k, err := asInt(rhs, "scale factor")
+			if err != nil {
+				return Value{}, err
+			}
+			if k == 0 {
+				return Value{}, fmt.Errorf("cannot scale by 0 — irreversible (everything maps to 0)")
+			}
+			if v.Op == SLASH && lhs%k != 0 {
+				return Value{}, fmt.Errorf("%q /= %d is not exact (%d %% %d = %d) — inexact division is irreversible", v.Name, k, lhs, k, lhs%k)
+			}
+			ip.scale(v.Name, k, v.Op == SLASH)
+			if v.Op == SLASH {
+				return numVal(float64(lhs / k)), nil
+			}
+			return numVal(float64(lhs * k)), nil
+		}
 		delta := rhs.Num
 		if v.Op == MINUS {
 			delta = -delta
 		}
 		ip.incr(v.Name, delta)
 		return numVal(cur.Num + delta), nil
+	case RotAssign:
+		cur, ok := ip.get(v.Name)
+		if !ok {
+			return Value{}, fmt.Errorf("cannot update undefined variable %q", v.Name)
+		}
+		lhs, err := asInt(cur, fmt.Sprintf("variable %q", v.Name))
+		if err != nil {
+			return Value{}, err
+		}
+		if lhs < 0 || lhs >= 1<<bitWidth {
+			return Value{}, fmt.Errorf("rotate target %q = %d is outside the %d-bit word [0, %d)", v.Name, lhs, bitWidth, 1<<bitWidth)
+		}
+		rhs, err := Eval(v.Value, ip)
+		if err != nil {
+			return Value{}, err
+		}
+		kraw, err := asInt(rhs, "rotate amount")
+		if err != nil {
+			return Value{}, err
+		}
+		k := int(((kraw % bitWidth) + bitWidth) % bitWidth)
+		ip.rot(v.Name, k, v.Left)
+		return numVal(float64(rotWord(lhs, k, v.Left))), nil
 	case XorAssign:
 		cur, ok := ip.get(v.Name)
 		if !ok {

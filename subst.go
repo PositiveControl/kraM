@@ -35,6 +35,8 @@ func substitute(n Node, m map[string]string) Node {
 		return CompoundAssign{Name: r(v.Name), Op: v.Op, Value: substitute(v.Value, m)}
 	case XorAssign:
 		return XorAssign{Name: r(v.Name), Value: substitute(v.Value, m)}
+	case RotAssign:
+		return RotAssign{Name: r(v.Name), Left: v.Left, Value: substitute(v.Value, m)}
 	case Swap:
 		return Swap{A: r(v.A), AI: substNil(v.AI, m), B: r(v.B), BI: substNil(v.BI, m)}
 	case ArrayLit:

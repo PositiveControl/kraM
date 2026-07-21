@@ -77,6 +77,70 @@ func (e xorEdit) redo(ip *Interp) { e.apply(ip) }
 func (e xorEdit) undo(ip *Interp) { e.apply(ip) }
 func (e xorEdit) label() string   { return fmt.Sprintf("%s ^= %d", e.name, e.mask) }
 
+// scaleEdit is a reversible integer scale: x *= k (or x /= k when div). Like
+// incrEdit it stores no prior value — the inverse divides where redo
+// multiplied. The eval layer guarantees k is a nonzero integer and that any
+// division is exact, so undo/redo are lossless.
+type scaleEdit struct {
+	name string
+	k    int64
+	div  bool
+}
+
+func (e scaleEdit) apply(ip *Interp, div bool) {
+	b := ip.vars[e.name]
+	n := int64(b.val.Num)
+	if div {
+		n /= e.k
+	} else {
+		n *= e.k
+	}
+	b.val.Num = float64(n)
+	ip.vars[e.name] = b
+}
+func (e scaleEdit) redo(ip *Interp) { e.apply(ip, e.div) }
+func (e scaleEdit) undo(ip *Interp) { e.apply(ip, !e.div) }
+func (e scaleEdit) label() string {
+	if e.div {
+		return fmt.Sprintf("%s /= %d", e.name, e.k)
+	}
+	return fmt.Sprintf("%s *= %d", e.name, e.k)
+}
+
+// rotEdit is a reversible bit rotation on the circuit word width: x <<= k
+// rotates left, x >>= k rotates right. A rotation permutes bits, so it is
+// exact; the inverse rotates the other way. k is stored normalized to
+// [0, bitWidth).
+type rotEdit struct {
+	name string
+	k    int
+	left bool
+}
+
+func rotWord(n int64, k int, left bool) int64 {
+	const w = bitWidth
+	if !left {
+		k = (w - k) % w
+	}
+	mask := int64(1)<<w - 1
+	n &= mask
+	return ((n << uint(k)) | (n >> uint(w-k))) & mask
+}
+
+func (e rotEdit) apply(ip *Interp, left bool) {
+	b := ip.vars[e.name]
+	b.val.Num = float64(rotWord(int64(b.val.Num), e.k, left))
+	ip.vars[e.name] = b
+}
+func (e rotEdit) redo(ip *Interp) { e.apply(ip, e.left) }
+func (e rotEdit) undo(ip *Interp) { e.apply(ip, !e.left) }
+func (e rotEdit) label() string {
+	if e.left {
+		return fmt.Sprintf("%s <<= %d", e.name, e.k)
+	}
+	return fmt.Sprintf("%s >>= %d", e.name, e.k)
+}
+
 // swapEdit exchanges two variables. It is self-inverse — redo and undo are the
 // same operation — like a Fredkin/controlled-swap gate. Stores only the names.
 type swapEdit struct{ a, b string }
@@ -218,6 +282,18 @@ func (ip *Interp) swap(a, b string) {
 // xor applies a reversible `x ^= mask`. Caller guarantees name holds an integer.
 func (ip *Interp) xor(name string, mask int64) {
 	ip.do(xorEdit{name: name, mask: mask})
+}
+
+// scale applies a reversible `x *= k` (or `x /= k`). Caller guarantees the
+// target is an integer, k is a nonzero integer, and division is exact.
+func (ip *Interp) scale(name string, k int64, div bool) {
+	ip.do(scaleEdit{name: name, k: k, div: div})
+}
+
+// rot applies a reversible bit rotation. Caller guarantees the target is an
+// integer in [0, 2^bitWidth) and k is normalized to [0, bitWidth).
+func (ip *Interp) rot(name string, k int, left bool) {
+	ip.do(rotEdit{name: name, k: k, left: left})
 }
 
 // checkpoint captures enough state to roll back a partially-applied line,

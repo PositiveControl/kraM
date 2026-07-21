@@ -60,11 +60,21 @@ func invert(n Node) (Node, error) {
 		return Block{Stmts: out}, nil
 
 	case CompoundAssign:
-		op := MINUS
-		if v.Op == MINUS {
+		var op TokKind
+		switch v.Op {
+		case PLUS:
+			op = MINUS
+		case MINUS:
 			op = PLUS
+		case STAR:
+			op = SLASH
+		case SLASH:
+			op = STAR
 		}
 		return CompoundAssign{Name: v.Name, Op: op, Value: v.Value}, nil
+
+	case RotAssign:
+		return RotAssign{Name: v.Name, Left: !v.Left, Value: v.Value}, nil
 
 	case Swap:
 		return v, nil // self-inverse (variable or array element)
