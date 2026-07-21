@@ -34,7 +34,51 @@ func main() {
 	reg("kramInvert", func(a []js.Value) any { return kramCompile(a[0].String(), "invert") })
 	reg("kramVerify", func(a []js.Value) any { return kramCompile(a[0].String(), "verify") })
 	reg("kramEnergy", func(a []js.Value) any { return kramCompile(a[0].String(), "energy") })
+	reg("kramQasm", func(a []js.Value) any { return kramCompile(a[0].String(), "qasm") })
+	reg("kramGrover", func(a []js.Value) any { return kramGrover(a[0].String(), a[1].Int(), a[2].Int()) })
+	reg("kramGroverQasm", func(a []js.Value) any { return kramGroverQasm(a[0].String(), a[1].Int(), a[2].Int()) })
 	select {} // keep the instance alive for callbacks
+}
+
+// kramGrover runs the Grover simulation and returns the full per-iteration
+// distributions so the page can scrub without round-tripping. bits is capped
+// at 8 (256 bars) to bound the JSON payload and the DOM.
+func kramGrover(cond string, bits, iters int) string {
+	if bits < 1 || bits > 8 {
+		return marshal(map[string]any{"ok": false, "error": "bits must be 1..8 in the studio"})
+	}
+	condNode, warn, err := parseCond(cond, bits)
+	if err != nil {
+		return marshal(map[string]any{"ok": false, "error": err.Error()})
+	}
+	bc, lay, err := compileOracle(condNode, bits)
+	if err != nil {
+		return marshal(map[string]any{"ok": false, "error": err.Error()})
+	}
+	table, err := oracleTruthTable(bc, lay)
+	if err != nil {
+		return marshal(map[string]any{"ok": false, "error": err.Error()})
+	}
+	r := groverRun(table, iters)
+	// Re-run iteration by iteration to capture every intermediate distribution.
+	steps := make([][]float64, 0, r.Iters+1)
+	for k := 0; k <= r.Iters; k++ {
+		steps = append(steps, groverRun(table, k).Final)
+	}
+	return marshal(map[string]any{
+		"ok": true, "warning": warn, "var": lay.varName,
+		"n": bits, "N": r.N, "M": r.M, "optimal": r.Optimal, "iters": r.Iters,
+		"gates": len(bc.gates), "wires": bc.nwires,
+		"marked": r.Marked, "success": r.Success, "steps": steps,
+	})
+}
+
+func kramGroverQasm(cond string, bits, iters int) string {
+	text, err := groverQasmReport(cond, bits, iters)
+	if err != nil {
+		return marshal(map[string]any{"ok": false, "error": err.Error()})
+	}
+	return marshal(map[string]any{"ok": true, "text": text})
 }
 
 func marshal(v any) string {
@@ -199,6 +243,12 @@ func kramCompile(src, mode string) string {
 			return marshal(map[string]any{"ok": false, "error": e.Error()})
 		}
 		text = rep
+	case "qasm":
+		bc, e := compileBits(ast, env)
+		if e != nil {
+			return marshal(map[string]any{"ok": false, "error": e.Error()})
+		}
+		text = qasmProgram(bc)
 	}
 	return marshal(map[string]any{"ok": true, "text": text})
 }

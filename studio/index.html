@@ -56,6 +56,23 @@
   table { border-collapse: collapse; width: 100%; }
   td { padding: 2px 8px 2px 0; vertical-align: top; }
   td.name { color: var(--accent); }
+  /* grover pane */
+  .gr-controls { display: flex; gap: 8px; margin-bottom: 8px; }
+  .gr-controls input[type=text] {
+    flex: 1; background: var(--panel); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  .gr-legend { display: flex; gap: 14px; align-items: center; color: var(--dim); font-size: 12px; margin: 6px 0 4px; }
+  .gr-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+  #gr-chart { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+  #gr-chart .bar {
+    flex: 1; min-width: 2px; background: #4f8ae0; border-radius: 3px 3px 0 0;
+    transition: height .18s ease;
+  }
+  #gr-chart .bar.hit { background: #b8871a; }
+  .gr-axis { display: flex; color: var(--dim); font-size: 11px; margin-top: 2px; }
+  #gr-iter { width: 100%; accent-color: var(--accent); margin-top: 8px; }
+  #gr-p { color: var(--ink); }
   .grid { display: inline-grid; gap: 2px; margin-top: 2px; }
   .cell { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
           border-radius: 3px; font-size: 11px; background: var(--panel); border: 1px solid var(--edge); }
@@ -111,6 +128,38 @@
     <div class="pane" style="flex:1">
       <div class="hd">circuit / messages</div>
       <div class="body"><pre id="circuit" class="msg-note">— run :gates / :circuit / :verify —</pre></div>
+    </div>
+    <div class="pane" style="flex:2">
+      <div class="hd">
+        grover — quantum search on a compiled oracle
+        <span class="grow"></span>
+        <span id="gr-stats" style="text-transform:none;letter-spacing:0"></span>
+      </div>
+      <div class="body">
+        <div class="gr-controls">
+          <input id="gr-cond" type="text" value="x == 9 || x == 3" spellcheck="false" aria-label="condition">
+          <select id="gr-bits" aria-label="bits">
+            <option>3</option><option selected>4</option><option>5</option>
+            <option>6</option><option>7</option><option>8</option>
+          </select>
+          <button id="gr-run">Search</button>
+          <button id="gr-anim" disabled>▶</button>
+          <button id="gr-qasm" disabled>⬇ QASM</button>
+        </div>
+        <div id="gr-msg" class="msg-note">compile a condition to a Toffoli oracle, watch amplitude amplification find its solutions</div>
+        <div id="gr-chart-wrap" hidden>
+          <div class="gr-legend">
+            <span><i class="sw" style="background:#b8871a"></i>solution</span>
+            <span><i class="sw" style="background:#4f8ae0"></i>other</span>
+            <span class="grow"></span>
+            <span id="gr-p"></span>
+          </div>
+          <div id="gr-chart" role="img" aria-label="probability per basis state"></div>
+          <div class="gr-axis"><span id="gr-x0">0</span><span class="grow"></span><span id="gr-xn"></span></div>
+          <input type="range" id="gr-iter" min="0" max="0" value="0" aria-label="iteration">
+          <div id="gr-iter-label" class="msg-note"></div>
+        </div>
+      </div>
     </div>
   </div>
 </main>
@@ -293,6 +342,72 @@ document.querySelectorAll("[data-compile]").forEach(btn => {
     else { c.className = "msg-err"; c.textContent = r.error + (sel ? "" : "\n\n(tip: select just the reversible lines, then compile)"); }
   };
 });
+
+// ---- grover pane ----
+let gr = null;        // last kramGrover result
+let grTimer = null;
+
+function grRender(k) {
+  const step = gr.steps[k];
+  const maxP = Math.max(...gr.steps.flat());
+  const chart = $("gr-chart");
+  chart.replaceChildren();
+  const marked = new Set(gr.marked);
+  step.forEach((p, x) => {
+    const b = document.createElement("div");
+    b.className = "bar" + (marked.has(x) ? " hit" : "");
+    b.style.height = `${Math.max(1, p / maxP * 100)}%`;
+    b.title = `${gr.var}=${x}  p=${p.toFixed(4)}${marked.has(x) ? "  ← solution" : ""}`;
+    chart.appendChild(b);
+  });
+  $("gr-p").textContent = `P(solution) = ${gr.success[k].toFixed(4)}`;
+  $("gr-iter-label").textContent =
+    k === 0 ? "iteration 0 — uniform superposition (all values equally likely)"
+            : `iteration ${k} of ${gr.iters} — oracle phase-flip + diffusion, ×${k}`;
+  $("gr-iter").value = k;
+}
+
+$("gr-run").onclick = () => {
+  if (!ready) return;
+  clearInterval(grTimer);
+  const r = JSON.parse(kramGrover($("gr-cond").value, +$("gr-bits").value, -1));
+  const msg = $("gr-msg");
+  if (!r.ok) { msg.className = "msg-err"; msg.textContent = r.error; $("gr-chart-wrap").hidden = true; return; }
+  gr = r;
+  const parts = [`oracle: ${r.gates} gates, ${r.wires} wires`, `N=${r.N}`, `M=${r.M}`, `optimal k*=${r.optimal}`];
+  if (r.warning) parts.unshift(`⚠ ${r.warning}`);
+  msg.className = r.warning ? "msg-warn" : "msg-note";
+  msg.textContent = parts.join(" · ");
+  $("gr-stats").textContent = r.M === 0 ? "no solutions" : "";
+  $("gr-xn").textContent = r.N - 1;
+  $("gr-iter").max = r.iters;
+  $("gr-iter").disabled = r.iters === 0;
+  $("gr-anim").disabled = r.iters === 0;
+  $("gr-qasm").disabled = false;
+  $("gr-chart-wrap").hidden = false;
+  grRender(0);
+  // auto-animate on run: step through the iterations once
+  let k = 0;
+  grTimer = setInterval(() => { k++; if (!gr || k > gr.iters) return clearInterval(grTimer); grRender(k); }, 700);
+};
+$("gr-iter").oninput = e => { clearInterval(grTimer); if (gr) grRender(+e.target.value); };
+$("gr-anim").onclick = () => {
+  if (!gr) return;
+  clearInterval(grTimer);
+  let k = 0;
+  grRender(0);
+  grTimer = setInterval(() => { k++; if (!gr || k > gr.iters) return clearInterval(grTimer); grRender(k); }, 700);
+};
+$("gr-qasm").onclick = () => {
+  if (!ready) return;
+  const r = JSON.parse(kramGroverQasm($("gr-cond").value, +$("gr-bits").value, -1));
+  if (!r.ok) { const m = $("gr-msg"); m.className = "msg-err"; m.textContent = r.error; return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
+  a.download = "grover.qasm";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
 
 // examples menu
 const sel = $("examples");
