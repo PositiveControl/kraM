@@ -34,16 +34,23 @@ quantum algorithm (1992).
   Sample export: `hardware/dj.qasm`.
 - Shares the single-query harness with `:bv`. Effort: small.
 
-## 3. Quantum counting — `:count`
+## 3. Quantum counting — `:count` (shipped)
 
 Not "find an x satisfying the condition" but "how many x satisfy it" —
 Grover's operator run inside quantum phase estimation; the rotation angle
 encodes M/N. Thematic rhyme with `range.kr`, which counts hits classically.
 
-- Direct extension of the existing `:grover` machinery.
-- Simulator-only: QPE is far too deep for today's hardware.
-- Studio idea: visualize the estimated phase converging as counting qubits
-  are added. Effort: medium (needs QFT and controlled-Grover plumbing).
+- Shipped as exact measurement statistics: the uniform start state overlaps
+  each Grover eigenvector with weight exactly 1/2, so the readout
+  distribution is an equal mix of two QPE kernels — computed analytically,
+  cross-checked in tests against a direct unitary simulation (explicit G^k
+  powers + DFT, no subspace shortcut).
+- Default t = bits+2 counting qubits rounds to the exact M on every test
+  oracle; `t=K` overrides to show resolution trade-offs.
+- Simulator-only, by design: controlled-Grover leaves the qelib1 gate set
+  and QPE is far too deep for today's hardware. No QASM export.
+- Studio idea still open: visualize the estimated phase converging as
+  counting qubits are added.
 
 ## 4. Simon's algorithm — `:simon`
 

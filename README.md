@@ -208,6 +208,7 @@ not one circuit — compile the single forward pass, not the whole file.
 `:grover BITS COND [iters=K] [qasm]` — Grover-search a compiled oracle (see below)
 `:bv BITS S [qasm]` — Bernstein–Vazirani: recover hidden S in one oracle query
 `:dj BITS COND [qasm]` — Deutsch–Jozsa: COND constant or balanced, in one query
+`:count BITS COND [t=K]` — quantum counting: estimate how many x satisfy COND
 `:qasm CODE` — export a compiled program as OpenQASM 2.0
 `:reset` `:help` — clear state, list commands
 
@@ -248,8 +249,15 @@ hardware nearly intact.
 `:dj BITS COND` is Deutsch–Jozsa: one query decides whether COND is constant
 or balanced (classically: 2^(BITS-1)+1 evaluations worst case). Measure all
 zeros → constant, anything else → balanced. Conditions that are neither break
-the promise; the report says so and gives the exact P(all zeros). More
-algorithms queued in [docs/quantum-roadmap.md](docs/quantum-roadmap.md).
+the promise; the report says so and gives the exact P(all zeros).
+
+`:count BITS COND` is quantum counting: phase estimation on the Grover
+operator estimates *how many* x satisfy COND without finding them — the
+quantum sibling of `range.kr`'s classical hit-counting. The report shows the
+exact QPE readout distribution (cross-checked in tests against a direct
+unitary simulation) and the M it rounds to. Simulator-only: controlled-Grover
+plus QFT is far beyond today's hardware depth budgets. More algorithms queued
+in [docs/quantum-roadmap.md](docs/quantum-roadmap.md).
 
 ## Status
 
