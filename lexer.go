@@ -58,6 +58,7 @@ const (
 	FORGET  // forget (deliberate irreversible erasure of a variable)
 	WITH    // with (compute-copy-uncompute: with x = e { compute } do { body })
 	DO      // do (body of a with block)
+	FOR     // for (counted-loop sugar: for i = lo until hi { body })
 )
 
 type Token struct {
@@ -170,6 +171,8 @@ func kindName(k TokKind) string {
 		return "WITH"
 	case DO:
 		return "DO"
+	case FOR:
+		return "FOR"
 	default:
 		return "ILLEGAL"
 	}
@@ -374,6 +377,8 @@ func Lex(src string) []Token {
 				toks = append(toks, Token{WITH, word, start})
 			case "do":
 				toks = append(toks, Token{DO, word, start})
+			case "for":
+				toks = append(toks, Token{FOR, word, start})
 			default:
 				toks = append(toks, Token{IDENT, word, start})
 			}

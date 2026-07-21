@@ -105,6 +105,15 @@ an **ancilla register** (allocated, used, then uncomputed and freed):
 > delocal t = x   # remove t, asserting it now equals x
 ```
 
+Counted loops have sugar: `for i = lo until hi { … }` (upper bound exclusive)
+desugars to the Janus loop `local i = lo; from i == lo { } loop { …; i += 1 }
+until i == hi; delocal i = hi`. The counter is scoped and removed at the end,
+and the loop's structural inverse counts back down from `hi` to `lo`:
+
+```
+> for i = 0 until n { call fibstep(a, b) }
+```
+
 The compute-copy-uncompute pattern (Bennett's trick) has dedicated syntax:
 `with` runs its compute block, then the body, then the compute block's
 *structural inverse*, and delocals the ancilla — the uncompute is derived from

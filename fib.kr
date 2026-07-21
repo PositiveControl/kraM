@@ -18,3 +18,12 @@ print "fib(" + n + ") pair: " + a + ", " + b
 
 reverse { from i == 0 { } loop { call fibstep(a, b); i += 1 } until i == n }
 print "reversed back to: a=" + a + ", b=" + b + ", i=" + i
+
+# The same loop as sugar: `for` scopes its own counter (introduced and
+# delocal'd automatically) and desugars to exactly the Janus loop above.
+# Its inverse counts back down, so reverse{} recovers the inputs the same way.
+
+for k = 0 until n { call fibstep(a, b) }
+print "with for: " + a + ", " + b
+reverse { for k = 0 until n { call fibstep(a, b) } }
+print "reversed back to: a=" + a + ", b=" + b

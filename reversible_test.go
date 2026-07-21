@@ -572,3 +572,71 @@ func TestWithDoRejectsIrreversibleCompute(t *testing.T) {
 		t.Fatalf("unhelpful error: %v", err)
 	}
 }
+
+// TestForLoop: `for i = lo until hi { body }` desugars to a scoped Janus loop.
+// Checks the counted result, that the counter does not leak, round-trip via
+// reverse{}, and the zero-iteration case.
+func TestForLoop(t *testing.T) {
+	ip := NewInterp()
+	mustRun(t, ip, "a = 0; b = 1; n = 10")
+	mustRun(t, ip, "proc fibstep(x, y) { x += y; x <=> y }")
+	mustRun(t, ip, "for i = 0 until n { call fibstep(a, b) }")
+	if av, _ := ip.get("a"); av.Num != 55 {
+		t.Fatalf("fib for-loop: a = %v, want 55", av.Num)
+	}
+	if _, exists := ip.get("i"); exists {
+		t.Fatal("loop counter i leaked (should be delocal'd)")
+	}
+	mustRun(t, ip, "reverse { for i = 0 until n { call fibstep(a, b) } }")
+	if av, _ := ip.get("a"); av.Num != 0 {
+		t.Fatalf("reverse for-loop: a = %v, want 0", av.Num)
+	}
+
+	// body reads the counter; reverse must still round-trip exactly
+	mustRun(t, ip, "s = 0")
+	mustRun(t, ip, "for k = 0 until 5 { s += k }")
+	if sv, _ := ip.get("s"); sv.Num != 10 {
+		t.Fatalf("sum 0..4: s = %v, want 10", sv.Num)
+	}
+	mustRun(t, ip, "reverse { for k = 0 until 5 { s += k } }")
+	if sv, _ := ip.get("s"); sv.Num != 0 {
+		t.Fatalf("reverse sum: s = %v, want 0", sv.Num)
+	}
+
+	// zero iterations: lo == hi
+	mustRun(t, ip, "for z = 3 until 3 { s += 100 }")
+	if sv, _ := ip.get("s"); sv.Num != 0 {
+		t.Fatalf("zero-iteration loop ran: s = %v", sv.Num)
+	}
+}
+
+// TestForLoopCircuit: the desugared for-loop unrolls to gates that match the
+// interpreter.
+func TestForLoopCircuit(t *testing.T) {
+	const src = `for i = 0 until 4 { a += 3; b ^= a }`
+	ip := NewInterp()
+	mustRun(t, ip, "a = 1; b = 0")
+
+	ast, err := Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := ip.clone()
+	if _, err := Eval(ast, clone); err != nil {
+		t.Fatal(err)
+	}
+	gates, err := lowerProgram(ast, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	simReg, err := simulate(gates, registersFrom(ip))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"a", "b"} {
+		iv := clone.vars[n].val
+		if int64(iv.Num) != simReg[n] {
+			t.Fatalf("%s: interpreter %v, circuit %d", n, iv.Num, simReg[n])
+		}
+	}
+}

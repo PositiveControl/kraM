@@ -33,7 +33,9 @@ reversed back to: a=0, b=1, i=0
   the step `(x, y) → (y, x+y)` is invertible by construction.
 - **Parameterized procedures** — `proc fibstep(x, y)` with by-reference args,
   applied each iteration via `call fibstep(a, b)`.
-- **Reversible loop** — `from … loop … until …`.
+- **Reversible loop** — `from … loop … until …`, then the same loop as
+  `for k = 0 until n { … }` sugar (scoped counter, auto-delocal'd; the
+  inverse counts back down).
 - **`reverse { … }`** — runs the structural inverse of the whole loop.
 - **Verified compilation** — `:verify` unrolls the loop, lowers it to
   `X / CNOT / Toffoli` gates, simulates them, and confirms a match with the

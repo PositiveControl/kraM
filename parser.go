@@ -251,6 +251,8 @@ func (p *Parser) parseStmt() Node {
 		return Forget{Name: p.declName()}
 	case WITH:
 		return p.parseWith()
+	case FOR:
+		return p.parseFor()
 	case PROC:
 		p.advance()
 		if p.cur().Kind != IDENT {
@@ -409,6 +411,40 @@ func (p *Parser) parseWith() Node {
 		body,
 		uncomp,
 		Delocal{Name: name, Value: val},
+	}}
+}
+
+// parseFor: `for i = lo until hi { body }` — counted-loop sugar (upper bound
+// exclusive, like Kotlin's `until`). Desugars at parse time to the Janus loop
+//   local i = lo
+//   from i == lo { } loop { body; i += 1 } until i == hi
+//   delocal i = hi
+// so the counter is scoped, the loop is reversible (its inverse counts back
+// down from hi to lo), and circuit unrolling works unchanged. lo == hi runs
+// zero iterations.
+func (p *Parser) parseFor() Node {
+	p.advance() // 'for'
+	name := p.declName()
+	p.expect(ASSIGN, "'='")
+	lo := p.parseExpr(0)
+	p.expect(UNTIL, "'until'")
+	hi := p.parseExpr(0)
+	body := p.parseBlock()
+	if p.err != nil {
+		return nil
+	}
+	iv := Var{Name: name}
+	rest := Block{Stmts: append(body.(Block).Stmts,
+		CompoundAssign{Name: name, Op: PLUS, Value: NumberLit{Val: 1}})}
+	return Block{Stmts: []Node{
+		Local{Name: name, Value: lo},
+		ReversibleLoop{
+			Entry: Binary{Op: EQ, Left: iv, Right: lo},
+			Do:    Block{},
+			Rest:  rest,
+			Exit:  Binary{Op: EQ, Left: iv, Right: hi},
+		},
+		Delocal{Name: name, Value: hi},
 	}}
 }
 
